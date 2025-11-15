@@ -28,6 +28,11 @@ export const friendsList = writable(
 );
 export const lobbies = writable([]);
 
+// SSE connection for lobby updates
+let lobbyEventSource = null;
+let lobbyStreamController = null; // AbortController for fetch-based SSE
+let lobbyReconnectTimeout = null;
+
 
 // --- Subscriptions ---
 
@@ -385,6 +390,7 @@ export async function recoverAccount(username, mnemonic) {
  * Logs the current user out.
  */
 export function logout() {
+    disconnectLobbyStream();
     jwt.set(null);
     recoveryPhrase.set(null);
 }
@@ -449,7 +455,7 @@ export function removeFriend(publicKey) {
 // --- Lobby Management ---
 
 /**
- * Fetches the list of all lobbies.
+ * Fetches the list of all lobbies (one-time fetch).
  */
 export async function getLobbies() {
     const token = get(jwt);
@@ -468,6 +474,144 @@ export async function getLobbies() {
     lobbies.set(lobbyData);
     return lobbyData;
 }
+
+/**
+ * Connects to the SSE stream for real-time lobby updates.
+ */
+export function connectLobbyStream() {
+    const token = get(jwt);
+    if (!token) {
+        console.warn('Cannot connect to lobby stream: not logged in');
+        return;
+    }
+    // ensure previous stream is torn down
+    disconnectLobbyStream();
+    // Use fetch API (with Authorization header) to establish SSE-like streaming
+    connectLobbyStreamWithFetch(token);
+}
+
+/**
+ * Internal function to connect to SSE stream using fetch API.
+ */
+async function connectLobbyStreamWithFetch(token) {
+    // cancel any pending reconnect timer
+    if (lobbyReconnectTimeout) {
+        clearTimeout(lobbyReconnectTimeout);
+        lobbyReconnectTimeout = null;
+    }
+
+    try {
+        const controller = new AbortController();
+        lobbyStreamController = controller;
+
+        const response = await fetch(`${apiBaseUrlValue}/lobbies/stream`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'text/event-stream',
+            },
+            signal: controller.signal,
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to connect to lobby stream: ${response.statusText}`);
+        }
+
+        if (!response.body) {
+            throw new Error('Readable stream not available');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            // Parse complete SSE events separated by a blank line (\n\n or \r\n\r\n)
+            let sepPos = -1;
+            // find earliest separator
+            const idx1 = buffer.indexOf('\r\n\r\n');
+            const idx2 = buffer.indexOf('\n\n');
+            if (idx1 !== -1 && (idx2 === -1 || idx1 < idx2)) sepPos = idx1;
+            else if (idx2 !== -1) sepPos = idx2;
+
+            while (sepPos !== -1) {
+                let sepLen = buffer.startsWith('\r\n\r\n', sepPos) ? 4 : 2;
+                const eventText = buffer.slice(0, sepPos);
+                buffer = buffer.slice(sepPos + sepLen);
+
+                // collect data: lines
+                const lines = eventText.split(/\r?\n/);
+                const dataParts = [];
+                for (const line of lines) {
+                    const t = line.trimRight();
+                    if (t.startsWith('data:')) {
+                        dataParts.push(t.slice(5).trimStart());
+                    }
+                }
+                if (dataParts.length > 0) {
+                    const dataStr = dataParts.join('\n');
+                    try {
+                        const parsed = JSON.parse(dataStr);
+                        lobbies.set(parsed);
+                    } catch (e) {
+                        console.error('Failed to parse SSE data for lobbies:', e, dataStr);
+                    }
+                }
+
+                const idx1b = buffer.indexOf('\r\n\r\n');
+                const idx2b = buffer.indexOf('\n\n');
+                if (idx1b !== -1 && (idx2b === -1 || idx1b < idx2b)) sepPos = idx1b;
+                else if (idx2b !== -1) sepPos = idx2b;
+                else sepPos = -1;
+            }
+        }
+    } catch (err) {
+        if (err && err.name === 'AbortError') {
+            // normal disconnect
+            return;
+        }
+        console.error('Lobby stream error:', err);
+        // schedule reconnect
+        lobbyStreamController = null;
+        lobbyReconnectTimeout = setTimeout(() => {
+            const currentToken = get(jwt);
+            if (currentToken) connectLobbyStreamWithFetch(currentToken);
+        }, 3000);
+    }
+}
+
+/**
+ * Disconnects from the SSE lobby stream.
+ */
+export function disconnectLobbyStream() {
+    // Abort fetch-based stream if present
+    if (lobbyStreamController) {
+        try { lobbyStreamController.abort(); } catch (e) { /* ignore */ }
+        lobbyStreamController = null;
+    }
+    if (lobbyReconnectTimeout) {
+        clearTimeout(lobbyReconnectTimeout);
+        lobbyReconnectTimeout = null;
+    }
+    if (lobbyEventSource) {
+        try { lobbyEventSource.close(); } catch (e) { /* ignore */ }
+        lobbyEventSource = null;
+    }
+}
+
+// Auto-manage stream when jwt changes (connect on login, disconnect on logout)
+jwt.subscribe(token => {
+    if (!browser) return;
+    if (token) {
+        // connect after small delay to let login finish
+        setTimeout(() => connectLobbyStream(), 50);
+    } else {
+        disconnectLobbyStream();
+    }
+});
 
 /**
  * Creates a new lobby.

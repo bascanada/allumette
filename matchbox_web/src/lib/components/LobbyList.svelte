@@ -1,15 +1,12 @@
 <script>
     import { onMount, onDestroy } from 'svelte';
-    import { lobbies, getLobbies, joinLobby, deleteLobby, inviteToLobby, friendsList, currentUser, isLoggedIn, jwt } from '../matchbox-service.js';
+    import { lobbies, getLobbies, connectLobbyStream, disconnectLobbyStream, joinLobby, deleteLobby, inviteToLobby, friendsList, currentUser, isLoggedIn, jwt } from '../matchbox-service.js';
     import { toast } from '@zerodevx/svelte-toast';
 
     // Callback function that will be called when joining a lobby
     // Provides: { lobbyId, token, players, isPrivate }
     export let onJoinLobby = null;
 
-    // Auto-refresh is enabled by default
-    let autoRefresh = true;
-    let refreshInterval;
     let isLoading = false;
     let showInviteModal = false;
     let selectedLobbyForInvite = null;
@@ -45,19 +42,6 @@
             toast.push(error.message || 'Failed to fetch lobbies');
         } finally {
             isLoading = false;
-        }
-    }
-
-    function handleAutoRefreshChange() {
-        // Always clear any existing interval to avoid duplicates
-        if (refreshInterval) {
-            clearInterval(refreshInterval);
-            refreshInterval = null;
-        }
-
-        if (autoRefresh) {
-            fetchLobbies(); // Fetch immediately
-            refreshInterval = setInterval(fetchLobbies, 3000);
         }
     }
 
@@ -153,19 +137,19 @@
         });
     }
 
-    // Fetch lobbies / start auto-refresh when the component mounts (only if logged in)
+    // Connect to SSE stream when component mounts (only if logged in)
     onMount(() => {
         if ($isLoggedIn) {
-            // If autoRefresh is enabled (default), this will immediately fetch and start the interval.
-            handleAutoRefreshChange();
+            // Connect to real-time lobby updates via SSE
+            connectLobbyStream();
+            // Do an initial fetch to get current state immediately
+            fetchLobbies();
         }
     });
 
-    // Clear the interval when the component is destroyed
+    // Disconnect from SSE stream when component is destroyed
     onDestroy(() => {
-        if (refreshInterval) {
-            clearInterval(refreshInterval);
-        }
+        disconnectLobbyStream();
     });
 </script>
 
@@ -174,13 +158,7 @@
     <div class="header">
         <h2>Lobbies</h2>
         <div class="controls">
-            <button on:click={fetchLobbies} disabled={isLoading || autoRefresh}>
-                {#if isLoading}Refreshing...{:else}Refresh{/if}
-            </button>
-            <label>
-                <input type="checkbox" bind:checked={autoRefresh} on:change={handleAutoRefreshChange} />
-                Auto-Refresh (3s)
-            </label>
+            <span class="live-indicator">🟢 Live Updates</span>
         </div>
     </div>
 
@@ -325,6 +303,11 @@
         display: flex;
         gap: 1em;
         align-items: center;
+    }
+    .live-indicator {
+        color: #4caf50;
+        font-weight: 500;
+        font-size: 0.875em;
     }
     table {
         width: 100%;

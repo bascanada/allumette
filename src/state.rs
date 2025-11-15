@@ -35,7 +35,7 @@ use std::{
     net::SocketAddr,
     sync::{Arc, RwLock},
 };
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{broadcast, mpsc::UnboundedSender};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -237,7 +237,7 @@ impl LobbyManager {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ServerState {
     pub lobby_manager: Arc<RwLock<LobbyManager>>,
     pub peers: StateObj<HashMap<PeerId, Peer>>,
@@ -245,6 +245,22 @@ pub struct ServerState {
     pub challenge_manager: ChallengeManager,
     pub players_to_peers: Arc<RwLock<HashMap<String, PeerId>>>,
     pub waiting_players: Arc<RwLock<HashMap<SocketAddr, String>>>,
+    pub lobby_updates: broadcast::Sender<()>,
+}
+
+impl Default for ServerState {
+    fn default() -> Self {
+        let (tx, _) = broadcast::channel(100);
+        Self {
+            lobby_manager: Default::default(),
+            peers: Default::default(),
+            players_in_lobbies: Default::default(),
+            challenge_manager: Default::default(),
+            players_to_peers: Default::default(),
+            waiting_players: Default::default(),
+            lobby_updates: tx,
+        }
+    }
 }
 
 impl SignalingState for ServerState {}

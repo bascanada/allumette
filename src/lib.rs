@@ -10,7 +10,7 @@ use axum::http::HeaderMap;
 use axum::{
     extract::{FromRef, Path, State},
     http::StatusCode,
-    response::{IntoResponse, Json},
+    response::{IntoResponse, Json, sse::{Event, KeepAlive, Sse}},
     routing::{get, post, delete},
     Router,
 };
@@ -18,7 +18,8 @@ use jsonwebtoken::{decode, DecodingKey, Validation};
 use matchbox_signaling::SignalingServerBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::net::SocketAddr;
+use std::{convert::Infallible, net::SocketAddr};
+use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 use tower_http::cors::CorsLayer;
 use tracing::info;
 use tracing_subscriber::prelude::*;
@@ -140,6 +141,7 @@ fn app(state: AppState) -> Router {
             "/lobbies",
             post(create_lobby_handler).get(list_lobbies_handler),
         )
+        .route("/lobbies/stream", get(lobby_stream_handler))
         .route("/lobbies/:lobby_id/join", post(join_lobby_handler))
         .route("/lobbies/:lobby_id", delete(delete_lobby_handler))
         .route("/lobbies/:lobby_id/invite", post(invite_to_lobby_handler))
@@ -254,6 +256,10 @@ async fn create_lobby_handler(
     let mut players_in_lobbies = state.state.players_in_lobbies.write().unwrap();
     players_in_lobbies.insert(claims.sub.clone(), lobby.id);
     tracing::info!(lobby_id = %lobby.id, pubkey = %&claims.sub[..8], "Lobby created and player added");
+    
+    // Notify all SSE clients of lobby update
+    let _ = state.state.lobby_updates.send(());
+    
     Json(lobby).into_response()
 }
 
@@ -279,6 +285,62 @@ async fn list_lobbies_handler(
     let lobby_manager = state.state.lobby_manager.read().unwrap();
     let lobbies = lobby_manager.get_lobbies_for_player(player_pubkey);
     Json(lobbies)
+}
+
+async fn lobby_stream_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Sse<impl futures::stream::Stream<Item = Result<Event, Infallible>>> {
+    // Try to extract bearer token from Authorization header and decode claims
+    let player_pubkey = headers
+        .get("authorization")
+        .and_then(|hv| hv.to_str().ok())
+        .and_then(|auth| auth.strip_prefix("Bearer "))
+        .and_then(|token| {
+            decode::<auth::Claims>(
+                token,
+                &DecodingKey::from_secret(state.secret.0.as_ref()),
+                &Validation::default(),
+            )
+            .ok()
+            .map(|data| data.claims.sub)
+        });
+
+    // Subscribe to lobby updates
+    let rx = state.state.lobby_updates.subscribe();
+    let lobby_manager = state.state.lobby_manager.clone();
+
+    // Create a stream that listens for updates and transforms them to SSE events
+    let stream = BroadcastStream::new(rx)
+        .then(move |result| {
+            let lobby_manager = lobby_manager.clone();
+            let player_pubkey = player_pubkey.clone();
+            
+            async move {
+                // Ignore broadcast errors (lagged messages)
+                if result.is_err() {
+                    return None;
+                }
+                
+                // Get current lobbies for this player
+                let lobbies = {
+                    let manager = lobby_manager.read().unwrap();
+                    manager.get_lobbies_for_player(player_pubkey)
+                };
+                
+                // Serialize lobbies to JSON
+                match serde_json::to_string(&lobbies) {
+                    Ok(json) => Some(Ok(Event::default().data(json))),
+                    Err(e) => {
+                        tracing::error!("Failed to serialize lobbies: {}", e);
+                        None
+                    }
+                }
+            }
+        })
+        .filter_map(|x| x);
+
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
 async fn join_lobby_handler(
@@ -340,6 +402,10 @@ async fn join_lobby_handler(
     tracing::debug!(full_pubkey = %claims.sub, "Full public key for join");
     tracing::debug!(players_in_lobbies = ?*players_in_lobbies, "Current players_in_lobbies map");
     tracing::info!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Player joined lobby");
+    
+    // Notify all SSE clients of lobby update
+    let _ = state.state.lobby_updates.send(());
+    
     StatusCode::OK.into_response()
 }
 
@@ -372,6 +438,9 @@ async fn delete_lobby_handler(
                 
                 tracing::info!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Lobby deleted by owner");
                 
+                // Notify all SSE clients of lobby update
+                let _ = state.state.lobby_updates.send(());
+                
                 // TODO: Close all WebSocket connections for players in this lobby
                 // This would require tracking peer connections by lobby
                 
@@ -391,6 +460,10 @@ async fn delete_lobby_handler(
         players_in_lobbies.remove(&claims.sub);
         
         tracing::info!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Player left lobby");
+        
+        // Notify all SSE clients of lobby update
+        let _ = state.state.lobby_updates.send(());
+        
         StatusCode::OK.into_response()
     }
 }
@@ -433,6 +506,10 @@ async fn invite_to_lobby_handler(
                 invited_count = payload.player_public_keys.len(),
                 "Players invited to lobby"
             );
+            
+            // Notify all SSE clients of lobby update
+            let _ = state.state.lobby_updates.send(());
+            
             Json(json!({ "success": true, "invited": payload.player_public_keys })).into_response()
         }
         Err(_) => {

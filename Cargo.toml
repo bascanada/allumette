@@ -27,7 +27,7 @@ futures = { version = "0.3", default-features = false, features = ["alloc"] }
 uuid = { version = "1.4", features = ["serde", "v4"] }
 clap = { version = "4.3", features = ["derive", "env"] }
 thiserror = "2.0"
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["sync"] }
 argon2 = "0.5"
 ed25519-dalek = { version = "2.1", features = ["serde"] }
 jsonwebtoken = "9.2"
