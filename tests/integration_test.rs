@@ -1123,7 +1123,7 @@ async fn test_player_can_leave_lobby() {
         .unwrap();
     let lobbies: Vec<Value> = response.json().await.unwrap();
     assert_eq!(lobbies.len(), 1);
-    assert_eq!(lobbies[0]["players"].as_array().unwrap().len(), 2);
+    assert_eq!(lobbies[0]["player_count"], 2);
 
     // Player B leaves (using DELETE endpoint)
     let response = client
@@ -1143,7 +1143,7 @@ async fn test_player_can_leave_lobby() {
         .unwrap();
     let lobbies: Vec<Value> = response.json().await.unwrap();
     assert_eq!(lobbies.len(), 1); // Lobby still exists
-    assert_eq!(lobbies[0]["players"].as_array().unwrap().len(), 1); // Only owner left
+    assert_eq!(lobbies[0]["player_count"], 1); // Only owner left
 }
 
 #[tokio::test]
@@ -1607,4 +1607,396 @@ async fn test_only_owner_can_invite() {
         .await
         .unwrap();
     assert_eq!(response.status().as_u16(), 403); // Forbidden
+}
+
+#[tokio::test]
+#[serial]
+async fn test_sanitized_lobby_response_no_player_pubkeys() {
+    let addr = spawn_app().await;
+    let client = Client::new();
+
+    // --- Player A (creates lobby) ---
+    let response = client
+        .post(format!("http://{}/auth/challenge", addr))
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let challenge_a = body["challenge"].as_str().unwrap();
+    let login_payload_a =
+        helpers::generate_login_payload("player_a", "pass_a", challenge_a).unwrap();
+    let response = client
+        .post(format!("http://{}/auth/login", addr))
+        .header("Content-Type", "application/json")
+        .body(login_payload_a)
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let token_a = body["token"].as_str().unwrap();
+
+    let pubkey_a = helpers::get_public_key("player_a", "pass_a").unwrap();
+
+    // --- Player B ---
+    let response = client
+        .post(format!("http://{}/auth/challenge", addr))
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let challenge_b = body["challenge"].as_str().unwrap();
+    let login_payload_b =
+        helpers::generate_login_payload("player_b", "pass_b", challenge_b).unwrap();
+    let response = client
+        .post(format!("http://{}/auth/login", addr))
+        .header("Content-Type", "application/json")
+        .body(login_payload_b)
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let token_b = body["token"].as_str().unwrap();
+
+    let pubkey_b = helpers::get_public_key("player_b", "pass_b").unwrap();
+
+    // Create a public lobby
+    let response = client
+        .post(format!("http://{}/lobbies", addr))
+        .header("Authorization", format!("Bearer {}", token_a))
+        .header("Content-Type", "application/json")
+        .body(r#"{"is_private": false}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let lobby_create_response: Value = response.json().await.unwrap();
+
+    // Verify that the create lobby response does NOT contain player public keys
+    assert!(lobby_create_response.get("players").is_none(), "Create lobby response should not contain 'players' field");
+    assert!(lobby_create_response.get("owner").is_none(), "Create lobby response should not contain 'owner' field");
+    assert!(lobby_create_response.get("whitelist").is_none(), "Create lobby response should not contain 'whitelist' field");
+    
+    // Verify it contains sanitized fields
+    assert!(lobby_create_response.get("id").is_some(), "Create lobby response should contain 'id' field");
+    assert!(lobby_create_response.get("player_count").is_some(), "Create lobby response should contain 'player_count' field");
+    assert!(lobby_create_response.get("is_owner").is_some(), "Create lobby response should contain 'is_owner' field");
+    assert_eq!(lobby_create_response["is_owner"], true, "Creator should be marked as owner");
+    
+    let lobby_id = lobby_create_response["id"].as_str().unwrap();
+
+    // Player B joins
+    let response = client
+        .post(format!("http://{}/lobbies/{}/join", addr, lobby_id))
+        .header("Authorization", format!("Bearer {}", token_b))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+
+    // List lobbies as Player A
+    let response = client
+        .get(format!("http://{}/lobbies", addr))
+        .header("Authorization", format!("Bearer {}", token_a))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let lobbies: Vec<Value> = response.json().await.unwrap();
+    assert_eq!(lobbies.len(), 1);
+    
+    let lobby = &lobbies[0];
+    
+    // Verify NO public keys are exposed
+    assert!(lobby.get("players").is_none(), "Lobby list should not contain 'players' field with public keys");
+    assert!(lobby.get("owner").is_none(), "Lobby list should not contain 'owner' field with public key");
+    assert!(lobby.get("whitelist").is_none(), "Lobby list should not contain 'whitelist' field");
+    
+    // Verify response does not contain the actual public keys anywhere
+    let lobby_json_str = serde_json::to_string(&lobby).unwrap();
+    assert!(!lobby_json_str.contains(&pubkey_a), "Response should not contain Player A's public key");
+    assert!(!lobby_json_str.contains(&pubkey_b), "Response should not contain Player B's public key");
+    
+    // Verify sanitized fields are present
+    assert_eq!(lobby["player_count"], 2, "Should show correct player count");
+    assert_eq!(lobby["is_owner"], true, "Player A should be marked as owner");
+    assert!(lobby.get("is_private").is_some());
+    assert!(lobby.get("status").is_some());
+
+    // List lobbies as Player B
+    let response = client
+        .get(format!("http://{}/lobbies", addr))
+        .header("Authorization", format!("Bearer {}", token_b))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let lobbies_b: Vec<Value> = response.json().await.unwrap();
+    assert_eq!(lobbies_b.len(), 1);
+    
+    let lobby_b = &lobbies_b[0];
+    assert_eq!(lobby_b["is_owner"], false, "Player B should NOT be marked as owner");
+    assert!(lobby_b.get("players").is_none(), "Player B's view should not contain 'players' field");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_cache_control_headers_on_sensitive_endpoints() {
+    let addr = spawn_app().await;
+    let client = Client::new();
+
+    // Test challenge endpoint
+    let response = client
+        .post(format!("http://{}/auth/challenge", addr))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let headers = response.headers();
+    assert!(headers.contains_key("cache-control"), "Challenge endpoint should have Cache-Control header");
+    let cache_control = headers.get("cache-control").unwrap().to_str().unwrap();
+    assert!(cache_control.contains("no-store"), "Should contain no-store");
+    assert!(cache_control.contains("no-cache"), "Should contain no-cache");
+
+    // Test login endpoint
+    let body: Value = response.json().await.unwrap();
+    let challenge = body["challenge"].as_str().unwrap();
+    let login_payload = helpers::generate_login_payload("player_a", "pass_a", challenge).unwrap();
+    let response = client
+        .post(format!("http://{}/auth/login", addr))
+        .header("Content-Type", "application/json")
+        .body(login_payload)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let headers = response.headers();
+    assert!(headers.contains_key("cache-control"), "Login endpoint should have Cache-Control header");
+
+    let body: Value = response.json().await.unwrap();
+    let token = body["token"].as_str().unwrap();
+
+    // Test lobby list endpoint
+    let response = client
+        .get(format!("http://{}/lobbies", addr))
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let headers = response.headers();
+    assert!(headers.contains_key("cache-control"), "Lobby list endpoint should have Cache-Control header");
+
+    // Test create lobby endpoint
+    let response = client
+        .post(format!("http://{}/lobbies", addr))
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Content-Type", "application/json")
+        .body(r#"{"is_private": false}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let headers = response.headers();
+    assert!(headers.contains_key("cache-control"), "Create lobby endpoint should have Cache-Control header");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_sse_stream_cache_headers() {
+    let addr = spawn_app().await;
+    let client = Client::new();
+
+    // Authenticate
+    let response = client
+        .post(format!("http://{}/auth/challenge", addr))
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let challenge = body["challenge"].as_str().unwrap();
+    let login_payload = helpers::generate_login_payload("player_a", "pass_a", challenge).unwrap();
+    let response = client
+        .post(format!("http://{}/auth/login", addr))
+        .header("Content-Type", "application/json")
+        .body(login_payload)
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let token = body["token"].as_str().unwrap();
+
+    // Create lobby first so stream has data
+    client
+        .post(format!("http://{}/lobbies", addr))
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Content-Type", "application/json")
+        .body(r#"{"is_private": false}"#)
+        .send()
+        .await
+        .unwrap();
+
+    // Check SSE stream headers (don't try to read the stream, just check headers)
+    let response = client
+        .get(format!("http://{}/lobbies/stream", addr))
+        .header("Authorization", format!("Bearer {}", token))
+        .timeout(std::time::Duration::from_millis(500))
+        .send()
+        .await
+        .unwrap();
+
+    // Check cache control headers on SSE stream
+    let headers = response.headers();
+    assert!(headers.contains_key("cache-control"), "SSE stream should have Cache-Control header");
+    let cache_control = headers.get("cache-control").unwrap().to_str().unwrap();
+    assert!(cache_control.contains("no-store"), "SSE stream should have no-store");
+    assert!(cache_control.contains("no-cache"), "SSE stream should have no-cache");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_whitelist_not_exposed_to_non_whitelisted_players() {
+    let addr = spawn_app().await;
+    let client = Client::new();
+
+    // --- Player A (creates private lobby) ---
+    let response = client
+        .post(format!("http://{}/auth/challenge", addr))
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let challenge_a = body["challenge"].as_str().unwrap();
+    let login_payload_a =
+        helpers::generate_login_payload("player_a", "pass_a", challenge_a).unwrap();
+    let response = client
+        .post(format!("http://{}/auth/login", addr))
+        .header("Content-Type", "application/json")
+        .body(login_payload_a)
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let token_a = body["token"].as_str().unwrap();
+
+    let pubkey_b = helpers::get_public_key("player_b", "pass_b").unwrap();
+    let pubkey_c = helpers::get_public_key("player_c", "pass_c").unwrap();
+
+    // Create private lobby with whitelist
+    let create_lobby_body = json!({
+        "is_private": true,
+        "whitelist": [pubkey_b.clone(), pubkey_c.clone()]
+    });
+    let response = client
+        .post(format!("http://{}/lobbies", addr))
+        .header("Authorization", format!("Bearer {}", token_a))
+        .header("Content-Type", "application/json")
+        .body(create_lobby_body.to_string())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let lobby_response: Value = response.json().await.unwrap();
+
+    // Verify whitelist is not in the response
+    assert!(lobby_response.get("whitelist").is_none(), "Whitelist should not be in response");
+    
+    // Verify the response doesn't contain the whitelisted public keys
+    let response_str = serde_json::to_string(&lobby_response).unwrap();
+    assert!(!response_str.contains(&pubkey_b), "Response should not contain whitelisted public key B");
+    assert!(!response_str.contains(&pubkey_c), "Response should not contain whitelisted public key C");
+
+    // --- Player D (not whitelisted) tries to discover lobbies ---
+    let response = client
+        .post(format!("http://{}/auth/challenge", addr))
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let challenge_d = body["challenge"].as_str().unwrap();
+    let login_payload_d =
+        helpers::generate_login_payload("player_d", "pass_d", challenge_d).unwrap();
+    let response = client
+        .post(format!("http://{}/auth/login", addr))
+        .header("Content-Type", "application/json")
+        .body(login_payload_d)
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let token_d = body["token"].as_str().unwrap();
+
+    // Player D should not see the lobby
+    let response = client
+        .get(format!("http://{}/lobbies", addr))
+        .header("Authorization", format!("Bearer {}", token_d))
+        .send()
+        .await
+        .unwrap();
+    let lobbies: Vec<Value> = response.json().await.unwrap();
+    assert_eq!(lobbies.len(), 0, "Non-whitelisted player should not see private lobby");
+}
+
+#[tokio::test]
+#[serial]
+async fn test_invite_response_does_not_leak_public_keys() {
+    let addr = spawn_app().await;
+    let client = Client::new();
+
+    // --- Player A (creates lobby) ---
+    let response = client
+        .post(format!("http://{}/auth/challenge", addr))
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let challenge_a = body["challenge"].as_str().unwrap();
+    let login_payload_a =
+        helpers::generate_login_payload("player_a", "pass_a", challenge_a).unwrap();
+    let response = client
+        .post(format!("http://{}/auth/login", addr))
+        .header("Content-Type", "application/json")
+        .body(login_payload_a)
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let token_a = body["token"].as_str().unwrap();
+
+    // Create lobby
+    let response = client
+        .post(format!("http://{}/lobbies", addr))
+        .header("Authorization", format!("Bearer {}", token_a))
+        .header("Content-Type", "application/json")
+        .body(r#"{"is_private": true}"#)
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let lobby_id = body["id"].as_str().unwrap();
+
+    let pubkey_b = helpers::get_public_key("player_b", "pass_b").unwrap();
+    let pubkey_c = helpers::get_public_key("player_c", "pass_c").unwrap();
+
+    // Invite players
+    let invite_body = json!({
+        "player_public_keys": [pubkey_b.clone(), pubkey_c.clone()]
+    });
+    let response = client
+        .post(format!("http://{}/lobbies/{}/invite", addr, lobby_id))
+        .header("Authorization", format!("Bearer {}", token_a))
+        .header("Content-Type", "application/json")
+        .body(invite_body.to_string())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let invite_response: Value = response.json().await.unwrap();
+
+    // Verify response does NOT contain the public keys
+    assert!(invite_response.get("invited").is_none(), "Invite response should not return list of invited public keys");
+    assert!(invite_response.get("invited_count").is_some(), "Invite response should return count of invited players");
+    
+    let response_str = serde_json::to_string(&invite_response).unwrap();
+    assert!(!response_str.contains(&pubkey_b), "Invite response should not contain Player B's public key");
+    assert!(!response_str.contains(&pubkey_c), "Invite response should not contain Player C's public key");
 }
