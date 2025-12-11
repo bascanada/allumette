@@ -115,7 +115,7 @@ pub async fn run(addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
                 let mut waiting_players = state.waiting_players.write().unwrap();
                 if let Some(player_id) = waiting_players.remove(&origin) {
                     let mut players_to_peers = state.players_to_peers.write().unwrap();
-                    players_to_peers.insert(player_id.clone(), peer_id);
+                    // players_to_peers.insert(player_id.clone(), peer_id);
                     tracing::info!(origin = ?origin, pubkey = %&player_id[..8], peer_id = ?peer_id, "Assigned peer_id to player");
                 } else {
                     tracing::error!(origin = ?origin, "No player_id found in waiting_players during id assignment");
