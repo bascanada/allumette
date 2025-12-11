@@ -10,15 +10,16 @@ use axum::http::HeaderMap;
 use axum::{
     extract::{FromRef, Path, State},
     http::StatusCode,
-    response::{IntoResponse, Json},
-    routing::{get, post},
+    response::{IntoResponse, Json, sse::{Event, KeepAlive, Sse}},
+    routing::{get, post, delete},
     Router,
 };
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use matchbox_signaling::SignalingServerBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::net::SocketAddr;
+use std::{convert::Infallible, net::SocketAddr};
+use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 use tower_http::cors::CorsLayer;
 use tracing::info;
 use tracing_subscriber::prelude::*;
@@ -140,7 +141,10 @@ fn app(state: AppState) -> Router {
             "/lobbies",
             post(create_lobby_handler).get(list_lobbies_handler),
         )
+        .route("/lobbies/stream", get(lobby_stream_handler))
         .route("/lobbies/:lobby_id/join", post(join_lobby_handler))
+        .route("/lobbies/:lobby_id", delete(delete_lobby_handler))
+        .route("/lobbies/:lobby_id/invite", post(invite_to_lobby_handler))
         // TODO: Restrict CORS for production environments
         .layer(CorsLayer::very_permissive())
         .with_state(state)
@@ -150,14 +154,23 @@ pub async fn health_handler() -> impl IntoResponse {
     StatusCode::OK
 }
 
+/// Add no-cache headers to response to prevent caching of sensitive data
+fn add_no_cache_headers(mut response: axum::response::Response) -> axum::response::Response {
+    let headers = response.headers_mut();
+    headers.insert("Cache-Control", "no-store, no-cache, must-revalidate, private".parse().unwrap());
+    headers.insert("Pragma", "no-cache".parse().unwrap());
+    headers.insert("Expires", "0".parse().unwrap());
+    response
+}
+
 #[derive(Serialize)]
 struct ChallengeResponse {
     challenge: String,
 }
 
-async fn challenge_handler(State(state): State<AppState>) -> Json<ChallengeResponse> {
+async fn challenge_handler(State(state): State<AppState>) -> impl IntoResponse {
     let challenge = state.state.challenge_manager.generate_challenge();
-    Json(ChallengeResponse { challenge })
+    add_no_cache_headers(Json(ChallengeResponse { challenge }).into_response())
 }
 
 #[derive(Deserialize)]
@@ -213,7 +226,7 @@ async fn login_handler(
     ) {
         Ok(token) => {
             tracing::info!(pubkey = %payload.public_key_b64, username = %payload.username, "Login successful");
-            Ok(Json(json!({ "token": token })))
+            Ok(add_no_cache_headers(Json(json!({ "token": token })).into_response()))
         }
         Err(_) => {
             tracing::error!(pubkey = %payload.public_key_b64, "Failed to issue JWT");
@@ -234,13 +247,30 @@ async fn create_lobby_handler(
     claims: auth::Claims,
     Json(payload): Json<CreateLobbyRequest>,
 ) -> impl IntoResponse {
+    // Check if player is already in a lobby
+    let players_in_lobbies = state.state.players_in_lobbies.read().unwrap();
+    if let Some(existing_lobby_id) = players_in_lobbies.get(&claims.sub) {
+        tracing::warn!(
+            existing_lobby_id = %existing_lobby_id,
+            pubkey = %&claims.sub[..8],
+            "Player attempted to create lobby while already in one"
+        );
+        return add_no_cache_headers((StatusCode::CONFLICT, "Already in a lobby").into_response());
+    }
+    drop(players_in_lobbies);
+
     let mut lobby_manager = state.state.lobby_manager.write().unwrap();
     // Create lobby and ensure the owner is present atomically
     let lobby = lobby_manager.create_lobby_with_owner(payload.is_private, claims.sub.clone(), payload.whitelist);
+    let lobby_response = lobby.to_response(Some(&claims.sub));
     let mut players_in_lobbies = state.state.players_in_lobbies.write().unwrap();
     players_in_lobbies.insert(claims.sub.clone(), lobby.id);
     tracing::info!(lobby_id = %lobby.id, pubkey = %&claims.sub[..8], "Lobby created and player added");
-    Json(lobby)
+    
+    // Notify all SSE clients of lobby update
+    let _ = state.state.lobby_updates.send(());
+    
+    add_no_cache_headers(Json(lobby_response).into_response())
 }
 
 async fn list_lobbies_handler(
@@ -263,8 +293,80 @@ async fn list_lobbies_handler(
         });
 
     let lobby_manager = state.state.lobby_manager.read().unwrap();
-    let lobbies = lobby_manager.get_lobbies_for_player(player_pubkey);
-    Json(lobbies)
+    let lobbies = lobby_manager.get_lobbies_for_player(player_pubkey.clone());
+    let sanitized_lobbies: Vec<_> = lobbies
+        .iter()
+        .map(|lobby| lobby.to_response(player_pubkey.as_ref()))
+        .collect();
+    add_no_cache_headers(Json(sanitized_lobbies).into_response())
+}
+
+async fn lobby_stream_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    // Try to extract bearer token from Authorization header and decode claims
+    let player_pubkey = headers
+        .get("authorization")
+        .and_then(|hv| hv.to_str().ok())
+        .and_then(|auth| auth.strip_prefix("Bearer "))
+        .and_then(|token| {
+            decode::<auth::Claims>(
+                token,
+                &DecodingKey::from_secret(state.secret.0.as_ref()),
+                &Validation::default(),
+            )
+            .ok()
+            .map(|data| data.claims.sub)
+        });
+
+    // Subscribe to lobby updates
+    let rx = state.state.lobby_updates.subscribe();
+    let lobby_manager = state.state.lobby_manager.clone();
+
+    // Create a stream that listens for updates and transforms them to SSE events
+    let stream = BroadcastStream::new(rx)
+        .then(move |result| {
+            let lobby_manager = lobby_manager.clone();
+            let player_pubkey = player_pubkey.clone();
+            
+            async move {
+                // Ignore broadcast errors (lagged messages)
+                if result.is_err() {
+                    return None;
+                }
+                
+                // Get current lobbies for this player and sanitize them
+                let sanitized_lobbies = {
+                    let manager = lobby_manager.read().unwrap();
+                    let lobbies = manager.get_lobbies_for_player(player_pubkey.clone());
+                    lobbies
+                        .iter()
+                        .map(|lobby| lobby.to_response(player_pubkey.as_ref()))
+                        .collect::<Vec<_>>()
+                };
+                
+                // Serialize sanitized lobbies to JSON
+                match serde_json::to_string(&sanitized_lobbies) {
+                    Ok(json) => Some(Ok::<Event, Infallible>(Event::default().data(json))),
+                    Err(e) => {
+                        tracing::error!("Failed to serialize lobbies: {}", e);
+                        None
+                    }
+                }
+            }
+        })
+        .filter_map(|x| x);
+
+    let sse = Sse::new(stream).keep_alive(KeepAlive::default());
+    
+    // Add no-cache headers to SSE response
+    let mut response = sse.into_response();
+    let headers = response.headers_mut();
+    headers.insert("Cache-Control", "no-store, no-cache, must-revalidate, private".parse().unwrap());
+    headers.insert("Pragma", "no-cache".parse().unwrap());
+    headers.insert("Expires", "0".parse().unwrap());
+    response
 }
 
 async fn join_lobby_handler(
@@ -272,22 +374,52 @@ async fn join_lobby_handler(
     Path(lobby_id): Path<uuid::Uuid>,
     claims: auth::Claims,
 ) -> impl IntoResponse {
+    // Check if player is already in a lobby
+    let players_in_lobbies = state.state.players_in_lobbies.read().unwrap();
+    if let Some(existing_lobby_id) = players_in_lobbies.get(&claims.sub) {
+        // Allow rejoining the same lobby (idempotent operation)
+        if *existing_lobby_id == lobby_id {
+            tracing::debug!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Player already in this lobby");
+            return add_no_cache_headers(StatusCode::OK.into_response());
+        }
+        tracing::warn!(
+            existing_lobby_id = %existing_lobby_id,
+            attempted_lobby_id = %lobby_id,
+            pubkey = %&claims.sub[..8],
+            "Player attempted to join lobby while already in another"
+        );
+        return add_no_cache_headers((StatusCode::CONFLICT, "Already in a lobby").into_response());
+    }
+    drop(players_in_lobbies);
+
     let mut lobby_manager = state.state.lobby_manager.write().unwrap();
     let result = lobby_manager.add_player_to_lobby(&lobby_id, claims.sub.clone());
 
     if result.is_err() {
-        // Check if it's a whitelist rejection
-        let lobby = lobby_manager.get_lobby(&lobby_id);
-        if let Some(lobby) = lobby {
+        // Determine reason: lobby missing, not whitelisted, or lobby already started
+        let lobby_opt = lobby_manager.get_lobby(&lobby_id);
+        if let Some(lobby) = lobby_opt {
+            // If lobby exists but is not in Waiting state, it's already in progress
+            if lobby.status != crate::lobby::LobbyStatus::Waiting {
+                tracing::warn!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Player attempted to join lobby already in progress");
+                return add_no_cache_headers((StatusCode::CONFLICT, "Game already started").into_response());
+            }
+
+            // Check whitelist rejection
             if let Some(whitelist) = &lobby.whitelist {
                 if !whitelist.contains(&claims.sub) {
                     tracing::warn!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Player not in whitelist");
-                    return (StatusCode::FORBIDDEN, "Not in whitelist").into_response();
+                    return add_no_cache_headers((StatusCode::FORBIDDEN, "Not in whitelist").into_response());
                 }
             }
+
+            // If we get here, the add failed for an unknown reason — return not found as fallback
+            tracing::warn!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Player failed to join lobby: unknown error");
+            return add_no_cache_headers((StatusCode::NOT_FOUND, "Lobby not found").into_response());
+        } else {
+            tracing::warn!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Player failed to join lobby: not found");
+            return add_no_cache_headers((StatusCode::NOT_FOUND, "Lobby not found").into_response());
         }
-        tracing::warn!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Player failed to join lobby: not found");
-        return (StatusCode::NOT_FOUND, "Lobby not found").into_response();
     }
 
     // Insert the joining player's public key into players_in_lobbies
@@ -296,5 +428,119 @@ async fn join_lobby_handler(
     tracing::debug!(full_pubkey = %claims.sub, "Full public key for join");
     tracing::debug!(players_in_lobbies = ?*players_in_lobbies, "Current players_in_lobbies map");
     tracing::info!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Player joined lobby");
-    StatusCode::OK.into_response()
+    
+    // Notify all SSE clients of lobby update
+    let _ = state.state.lobby_updates.send(());
+    
+    add_no_cache_headers(StatusCode::OK.into_response())
+}
+
+async fn delete_lobby_handler(
+    State(state): State<AppState>,
+    Path(lobby_id): Path<uuid::Uuid>,
+    claims: auth::Claims,
+) -> impl IntoResponse {
+    let mut lobby_manager = state.state.lobby_manager.write().unwrap();
+    
+    // Check if lobby exists
+    let lobby = lobby_manager.get_lobby(&lobby_id);
+    let lobby = match lobby {
+        Some(l) => l,
+        None => {
+            tracing::warn!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Attempted to delete/leave non-existent lobby");
+            return add_no_cache_headers((StatusCode::NOT_FOUND, "Lobby not found").into_response());
+        }
+    };
+    
+    let is_owner = lobby.owner == claims.sub;
+    
+    if is_owner {
+        // Owner is deleting the lobby - remove it completely
+        match lobby_manager.delete_lobby(&lobby_id) {
+            Ok(_) => {
+                // Remove all players from players_in_lobbies that were in this lobby
+                let mut players_in_lobbies = state.state.players_in_lobbies.write().unwrap();
+                players_in_lobbies.retain(|_, lid| *lid != lobby_id);
+                
+                tracing::info!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Lobby deleted by owner");
+                
+                // Notify all SSE clients of lobby update
+                let _ = state.state.lobby_updates.send(());
+                
+                // TODO: Close all WebSocket connections for players in this lobby
+                // This would require tracking peer connections by lobby
+                
+                add_no_cache_headers(StatusCode::OK.into_response())
+            }
+            Err(_) => {
+                tracing::error!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Failed to delete lobby");
+                add_no_cache_headers((StatusCode::INTERNAL_SERVER_ERROR, "Failed to delete lobby").into_response())
+            }
+        }
+    } else {
+        // Non-owner is leaving the lobby - just remove them
+        lobby_manager.remove_player_from_lobby(&lobby_id, &claims.sub);
+        
+        // Remove player from players_in_lobbies
+        let mut players_in_lobbies = state.state.players_in_lobbies.write().unwrap();
+        players_in_lobbies.remove(&claims.sub);
+        
+        tracing::info!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Player left lobby");
+        
+        // Notify all SSE clients of lobby update
+        let _ = state.state.lobby_updates.send(());
+        
+        add_no_cache_headers(StatusCode::OK.into_response())
+    }
+}
+
+#[derive(Deserialize)]
+pub struct InviteToLobbyRequest {
+    player_public_keys: Vec<String>,
+}
+
+async fn invite_to_lobby_handler(
+    State(state): State<AppState>,
+    Path(lobby_id): Path<uuid::Uuid>,
+    claims: auth::Claims,
+    Json(payload): Json<InviteToLobbyRequest>,
+) -> impl IntoResponse {
+    let mut lobby_manager = state.state.lobby_manager.write().unwrap();
+    
+    // Check if lobby exists
+    let lobby = lobby_manager.get_lobby(&lobby_id);
+    let lobby = match lobby {
+        Some(l) => l,
+        None => {
+            tracing::warn!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Attempted to invite to non-existent lobby");
+            return add_no_cache_headers((StatusCode::NOT_FOUND, "Lobby not found").into_response());
+        }
+    };
+    
+    // Only owner can invite
+    if lobby.owner != claims.sub {
+        tracing::warn!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Non-owner attempted to invite players");
+        return add_no_cache_headers((StatusCode::FORBIDDEN, "Only lobby owner can invite players").into_response());
+    }
+    
+    // Add players to whitelist (but don't return the list of invited players to prevent leaking public keys)
+    match lobby_manager.add_to_whitelist(&lobby_id, payload.player_public_keys.clone()) {
+        Ok(_) => {
+            tracing::info!(
+                lobby_id = %lobby_id,
+                pubkey = %&claims.sub[..8],
+                invited_count = payload.player_public_keys.len(),
+                "Players invited to lobby"
+            );
+            
+            // Notify all SSE clients of lobby update
+            let _ = state.state.lobby_updates.send(());
+            
+            add_no_cache_headers(Json(json!({ "success": true, "invited_count": payload.player_public_keys.len() })).into_response())
+        }
+        Err(_) => {
+            tracing::error!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Failed to invite players");
+            add_no_cache_headers((StatusCode::INTERNAL_SERVER_ERROR, "Failed to invite players").into_response())
+        }
+    }
 }
