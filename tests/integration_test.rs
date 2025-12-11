@@ -1611,7 +1611,7 @@ async fn test_only_owner_can_invite() {
 
 #[tokio::test]
 #[serial]
-async fn test_sanitized_lobby_response_no_player_pubkeys() {
+async fn test_lobby_response_visibility() {
     let addr = spawn_app().await;
     let client = Client::new();
 
@@ -1659,7 +1659,27 @@ async fn test_sanitized_lobby_response_no_player_pubkeys() {
 
     let pubkey_b = helpers::get_public_key("player_b", "pass_b").unwrap();
 
-    // Create a public lobby
+    // --- Player C (Non-member) ---
+    let response = client
+        .post(format!("http://{}/auth/challenge", addr))
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let challenge_c = body["challenge"].as_str().unwrap();
+    let login_payload_c =
+        helpers::generate_login_payload("player_c", "pass_c", challenge_c).unwrap();
+    let response = client
+        .post(format!("http://{}/auth/login", addr))
+        .header("Content-Type", "application/json")
+        .body(login_payload_c)
+        .send()
+        .await
+        .unwrap();
+    let body: Value = response.json().await.unwrap();
+    let token_c = body["token"].as_str().unwrap();
+
+    // Create a public lobby (Player A)
     let response = client
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_a))
@@ -1671,8 +1691,13 @@ async fn test_sanitized_lobby_response_no_player_pubkeys() {
     assert_eq!(response.status().as_u16(), 200);
     let lobby_create_response: Value = response.json().await.unwrap();
 
-    // Verify that the create lobby response does NOT contain player public keys
-    assert!(lobby_create_response.get("players").is_none(), "Create lobby response should not contain 'players' field");
+    // Verify that the create lobby response DOES contain player public keys (since creator is in lobby)
+    assert!(lobby_create_response.get("players").is_some(), "Create lobby response should contain 'players' field");
+    let players = lobby_create_response["players"].as_array().unwrap();
+    assert_eq!(players.len(), 1);
+    assert_eq!(players[0]["publicKey"], pubkey_a);
+    assert_eq!(players[0]["is_you"], true);
+
     assert!(lobby_create_response.get("owner").is_none(), "Create lobby response should not contain 'owner' field");
     assert!(lobby_create_response.get("whitelist").is_none(), "Create lobby response should not contain 'whitelist' field");
     
@@ -1693,7 +1718,7 @@ async fn test_sanitized_lobby_response_no_player_pubkeys() {
         .unwrap();
     assert_eq!(response.status().as_u16(), 200);
 
-    // List lobbies as Player A
+    // List lobbies as Player A (Member/Owner)
     let response = client
         .get(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_a))
@@ -1706,15 +1731,15 @@ async fn test_sanitized_lobby_response_no_player_pubkeys() {
     
     let lobby = &lobbies[0];
     
-    // Verify NO public keys are exposed
-    assert!(lobby.get("players").is_none(), "Lobby list should not contain 'players' field with public keys");
-    assert!(lobby.get("owner").is_none(), "Lobby list should not contain 'owner' field with public key");
-    assert!(lobby.get("whitelist").is_none(), "Lobby list should not contain 'whitelist' field");
+    // Verify public keys ARE exposed to members
+    assert!(lobby.get("players").is_some(), "Lobby list should contain 'players' field for members");
+    let players = lobby["players"].as_array().unwrap();
+    assert_eq!(players.len(), 2);
     
-    // Verify response does not contain the actual public keys anywhere
+    // Verify response contains the actual public keys
     let lobby_json_str = serde_json::to_string(&lobby).unwrap();
-    assert!(!lobby_json_str.contains(&pubkey_a), "Response should not contain Player A's public key");
-    assert!(!lobby_json_str.contains(&pubkey_b), "Response should not contain Player B's public key");
+    assert!(lobby_json_str.contains(&pubkey_a), "Response should contain Player A's public key");
+    assert!(lobby_json_str.contains(&pubkey_b), "Response should contain Player B's public key");
     
     // Verify sanitized fields are present
     assert_eq!(lobby["player_count"], 2, "Should show correct player count");
@@ -1722,7 +1747,7 @@ async fn test_sanitized_lobby_response_no_player_pubkeys() {
     assert!(lobby.get("is_private").is_some());
     assert!(lobby.get("status").is_some());
 
-    // List lobbies as Player B
+    // List lobbies as Player B (Member)
     let response = client
         .get(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_b))
@@ -1735,7 +1760,33 @@ async fn test_sanitized_lobby_response_no_player_pubkeys() {
     
     let lobby_b = &lobbies_b[0];
     assert_eq!(lobby_b["is_owner"], false, "Player B should NOT be marked as owner");
-    assert!(lobby_b.get("players").is_none(), "Player B's view should not contain 'players' field");
+    assert!(lobby_b.get("players").is_some(), "Player B's view should contain 'players' field");
+    let players_b = lobby_b["players"].as_array().unwrap();
+    assert_eq!(players_b.len(), 2);
+
+    // List lobbies as Player C (Non-member)
+    let response = client
+        .get(format!("http://{}/lobbies", addr))
+        .header("Authorization", format!("Bearer {}", token_c))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let lobbies_c: Vec<Value> = response.json().await.unwrap();
+    assert_eq!(lobbies_c.len(), 1);
+    
+    let lobby_c = &lobbies_c[0];
+    assert_eq!(lobby_c["is_owner"], false, "Player C should NOT be marked as owner");
+    
+    // Verify NO public keys are exposed to non-members
+    // Note: players field is present but empty array []
+    assert!(lobby_c.get("players").is_some(), "Player C's view should contain 'players' field (empty)");
+    let players_c = lobby_c["players"].as_array().unwrap();
+    assert_eq!(players_c.len(), 0, "Player C should see empty players list");
+    
+    let lobby_c_json_str = serde_json::to_string(&lobby_c).unwrap();
+    assert!(!lobby_c_json_str.contains(&pubkey_a), "Player C should not see Player A's public key");
+    assert!(!lobby_c_json_str.contains(&pubkey_b), "Player C should not see Player B's public key");
 }
 
 #[tokio::test]
