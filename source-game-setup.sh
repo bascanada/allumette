@@ -18,7 +18,7 @@ echo "Setting up multiplayer game with $NUM_PLAYERS players..."
 
 # Get the directory where this script is located
 # When sourced, BASH_SOURCE[0] contains the path to the script
-SCRIPT_DIR=$HOME/Project/bascanada/allumette-server
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 
 # Function to authenticate a player and get token

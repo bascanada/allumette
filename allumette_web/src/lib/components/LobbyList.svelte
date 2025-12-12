@@ -58,6 +58,7 @@
                         token: token,
                         players: lobby.players,
                         isPrivate: lobby.is_private,
+                        gameId: lobby.game_id,
                     });
                 } catch (error) {
                     toast.push(error.message || 'Failed to start game');
@@ -169,6 +170,7 @@
             <thead>
                 <tr>
                     <th>Privacy</th>
+                    <th>Game</th>
                     <th>Lobby ID</th>
                     <th>State</th>
                     <th>Players ({$lobbies.reduce((sum, l) => sum + l.players.length, 0)})</th>
@@ -182,6 +184,9 @@
                             <span class="privacy-badge" class:private={lobby.is_private}>
                                 {lobby.is_private ? '🔒 Private' : '🌐 Public'}
                             </span>
+                        </td>
+                        <td>
+                            <span class="game-id-badge">{lobby.game_id || 'Unknown'}</span>
                         </td>
                         <td>
                             <span class="lobby-state" class:inprogress={lobby.status === 'InProgress'}>
@@ -290,6 +295,15 @@
 {/if}
 
 <style>
+    .game-id-badge {
+        background-color: #e0f7fa;
+        color: #006064;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.9em;
+        font-weight: bold;
+    }
+
     .lobby-list-container {
         margin-top: 1em;
     }

@@ -3,6 +3,7 @@
   import { toast } from '@zerodevx/svelte-toast';
 
   let isPrivate = false;
+  let gameId = 'default-game';
   let selectedFriends = [];
   let isLoading = false;
 
@@ -10,7 +11,7 @@
     isLoading = true;
     try {
       const whitelist = isPrivate ? selectedFriends : [];
-      await createLobby(isPrivate, whitelist);
+      await createLobby(isPrivate, gameId, whitelist);
       // use toast.push since toast.success/toast.error helpers may not be available
       toast.push('Lobby created successfully!');
     } catch (error) {
@@ -22,8 +23,12 @@
 </script>
 
 <div class="create-lobby-container">
-  <h2>Create a New Lobby</h2>
   <form on:submit|preventDefault={handleCreateLobby}>
+    <div class="form-group">
+      <label for="gameId">Game ID:</label>
+      <input type="text" id="gameId" bind:value={gameId} placeholder="e.g. chess, poker" required />
+    </div>
+
     <div class="form-group">
       <label>
         <input type="checkbox" bind:checked={isPrivate} />

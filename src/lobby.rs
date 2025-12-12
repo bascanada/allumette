@@ -19,6 +19,7 @@ pub enum LobbyStatus {
 pub struct Lobby {
     pub id: Uuid,
     pub owner: PlayerId,
+    pub game_id: String,
     pub players: HashSet<PlayerId>,
     pub status: LobbyStatus,
     pub is_private: bool,
@@ -38,6 +39,7 @@ pub struct PlayerInfo {
 #[derive(Debug, Clone, Serialize)]
 pub struct LobbyResponse {
     pub id: Uuid,
+    pub game_id: String,
     pub is_owner: bool,
     pub player_count: usize,
     pub players: Vec<PlayerInfo>,
@@ -70,9 +72,9 @@ impl Lobby {
             // If player is not in the lobby, don't expose public keys - just show count as empty array
             vec![]
         };
-
         LobbyResponse {
             id: self.id,
+            game_id: self.game_id.clone(),
             is_owner,
             player_count: self.players.len(),
             players,

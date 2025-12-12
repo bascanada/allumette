@@ -15,7 +15,7 @@ A component that displays a list of available lobbies and allows users to create
 #### Callback Signature
 
 ```javascript
-onJoinLobby({ lobbyId, token, players, isPrivate })
+onJoinLobby({ lobbyId, token, players, isPrivate, gameId })
 ```
 
 **Parameters:**
@@ -23,26 +23,27 @@ onJoinLobby({ lobbyId, token, players, isPrivate })
 - `token` (string): The JWT authentication token for the current user
 - `players` (array): Array of public keys of players in the lobby
 - `isPrivate` (boolean): Whether the lobby is private
+- `gameId` (string): The ID of the game (e.g. "chess", "poker")
 
 #### Example Usage
 
 ```svelte
 <script>
-  import MatchboxLobbies from '$lib/components/MatchboxLobbies.svelte';
+  import AllumetteLobbies from '$lib/components/AllumetteLobbies.svelte';
 
-  function handleJoinLobby({ lobbyId, token, players, isPrivate }) {
-    console.log('Starting game with:', { lobbyId, token, players, isPrivate });
+  function handleJoinLobby({ lobbyId, token, players, isPrivate, gameId }) {
+    console.log('Starting game with:', { lobbyId, token, players, isPrivate, gameId });
     
     // Launch your game here
     // For example, connect to the matchbox websocket:
     // const ws = new WebSocket(`ws://localhost:3536/${token}`);
     
     // Or navigate to your game page:
-    // window.location.href = `/game?lobby=${lobbyId}&token=${token}`;
+    // window.location.href = `/game/${gameId}?lobby=${lobbyId}&token=${token}`;
   }
 </script>
 
-<MatchboxLobbiesComponent onJoinLobby={handleJoinLobby} />
+<AllumetteLobbies onJoinLobby={handleJoinLobby} />
 ```
 
 #### Using as Web Component

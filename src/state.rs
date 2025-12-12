@@ -59,11 +59,13 @@ impl LobbyManager {
         &mut self,
         is_private: bool,
         owner: String,
+        game_id: String,
         whitelist: Option<Vec<String>>,
     ) -> Lobby {
         let mut lobby = Lobby {
             id: Uuid::new_v4(),
             owner: owner.clone(),
+            game_id,
             players: Default::default(),
             status: crate::lobby::LobbyStatus::Waiting,
             is_private,
@@ -78,11 +80,13 @@ impl LobbyManager {
         &mut self,
         is_private: bool,
         owner: String,
+        game_id: String,
         whitelist: Option<Vec<String>>,
     ) -> Lobby {
         let lobby = Lobby {
             id: Uuid::new_v4(),
             owner,
+            game_id,
             players: Default::default(),
             status: crate::lobby::LobbyStatus::Waiting,
             is_private,

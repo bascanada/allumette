@@ -1,6 +1,7 @@
 {
 	"name": "@bascanada/allumette-web",
-	"version": "0.0.3",
+	"version": "0.0.4",
+	"license": "GPL-3.0-only",
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build && svelte-kit sync && svelte-package",

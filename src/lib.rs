@@ -115,7 +115,7 @@ pub async fn run(addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
                 let mut waiting_players = state.waiting_players.write().unwrap();
                 if let Some(player_id) = waiting_players.remove(&origin) {
                     let mut players_to_peers = state.players_to_peers.write().unwrap();
-                    // players_to_peers.insert(player_id.clone(), peer_id);
+                    players_to_peers.insert(player_id.clone(), peer_id);
                     tracing::info!(origin = ?origin, pubkey = %&player_id[..8], peer_id = ?peer_id, "Assigned peer_id to player");
                 } else {
                     tracing::error!(origin = ?origin, "No player_id found in waiting_players during id assignment");
@@ -238,6 +238,7 @@ async fn login_handler(
 #[derive(Deserialize)]
 pub struct CreateLobbyRequest {
     is_private: bool,
+    game_id: String,
     #[serde(default)]
     whitelist: Option<Vec<String>>,
 }
@@ -258,10 +259,9 @@ async fn create_lobby_handler(
         return add_no_cache_headers((StatusCode::CONFLICT, "Already in a lobby").into_response());
     }
     drop(players_in_lobbies);
-
     let mut lobby_manager = state.state.lobby_manager.write().unwrap();
     // Create lobby and ensure the owner is present atomically
-    let lobby = lobby_manager.create_lobby_with_owner(payload.is_private, claims.sub.clone(), payload.whitelist);
+    let lobby = lobby_manager.create_lobby_with_owner(payload.is_private, claims.sub.clone(), payload.game_id, payload.whitelist);
     let lobby_response = lobby.to_response(Some(&claims.sub));
     let mut players_in_lobbies = state.state.players_in_lobbies.write().unwrap();
     players_in_lobbies.insert(claims.sub.clone(), lobby.id);

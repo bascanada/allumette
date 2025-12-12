@@ -616,15 +616,17 @@ jwt.subscribe(token => {
 /**
  * Creates a new lobby.
  * @param {boolean} isPrivate - Whether the lobby should be private.
+ * @param {string} gameId - The ID of the game for this lobby.
  * @param {string[]} [whitelist] - An optional list of public keys for the whitelist (if private).
  * @returns {Promise<object>} The created lobby object.
  */
-export async function createLobby(isPrivate, whitelist = []) {
+export async function createLobby(isPrivate, gameId, whitelist = []) {
     const token = get(jwt);
     if (!token) throw new Error('Not logged in');
 
     const body = {
         is_private: isPrivate,
+        game_id: gameId,
         whitelist: isPrivate ? whitelist : undefined,
     };
 
