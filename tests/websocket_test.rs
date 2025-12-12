@@ -57,7 +57,7 @@ async fn test_websocket_connection_with_token_in_path() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -123,7 +123,7 @@ async fn test_two_players_connect_to_same_lobby() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_a))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();

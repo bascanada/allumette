@@ -118,7 +118,7 @@ async fn test_public_lobby_flow() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_a))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -211,7 +211,7 @@ async fn test_private_lobby_flow() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_a))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": true}"#)
+        .body(r#"{"is_private": true, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -290,7 +290,8 @@ async fn test_owner_sees_private_lobby_discovery() {
     // Create private lobby that whitelists only the owner
     let pubkey_owner = helpers::get_public_key("owner", "pass").unwrap();
     let create_lobby_body = json!({
-        "is_private": true,
+        "is_private": true, "game_id": "test_game",
+        "game_id": "test_game",
         "whitelist": [pubkey_owner]
     });
     let response = client
@@ -406,7 +407,7 @@ async fn test_whitelisted_player_discovery() {
 
     // Host creates a private lobby whitelisting guest
     let create_lobby_body = json!({
-        "is_private": true,
+        "is_private": true, "game_id": "test_game",
         "whitelist": [pubkey_b]
     });
     let response = client
@@ -525,7 +526,7 @@ async fn test_whitelist_allows_whitelisted_player() {
 
     // 2. Create a lobby with player B whitelisted
     let create_lobby_body = json!({
-        "is_private": true,
+        "is_private": true, "game_id": "test_game",
         "whitelist": [pubkey_b]
     });
     let response = client
@@ -615,7 +616,7 @@ async fn test_whitelist_blocks_non_whitelisted_player() {
 
     // 2. Create a lobby with only player B whitelisted
     let create_lobby_body = json!({
-        "is_private": true,
+        "is_private": true, "game_id": "test_game",
         "whitelist": [pubkey_b]
     });
     let response = client
@@ -730,7 +731,7 @@ async fn test_whitelist_multiple_players() {
 
     // Create a lobby with players B and C whitelisted
     let create_lobby_body = json!({
-        "is_private": true,
+        "is_private": true, "game_id": "test_game",
         "whitelist": [pubkey_b, pubkey_c]
     });
     let response = client
@@ -821,7 +822,7 @@ async fn test_lobby_without_whitelist_allows_all_players() {
 
     // Create a lobby WITHOUT whitelist
     let create_lobby_body = json!({
-        "is_private": true
+        "is_private": true, "game_id": "test_game"
     });
     let response = client
         .post(format!("http://{}/lobbies", addr))
@@ -876,7 +877,7 @@ async fn test_delete_lobby() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_a))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -977,7 +978,7 @@ async fn test_delete_lobby_with_multiple_players() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_a))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -1077,7 +1078,7 @@ async fn test_player_can_leave_lobby() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_a))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -1197,7 +1198,7 @@ async fn test_owner_deletes_lobby_completely() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_a))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -1273,7 +1274,7 @@ async fn test_cannot_create_multiple_lobbies() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -1284,7 +1285,7 @@ async fn test_cannot_create_multiple_lobbies() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -1321,7 +1322,7 @@ async fn test_cannot_join_multiple_lobbies() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_a))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -1353,7 +1354,7 @@ async fn test_cannot_join_multiple_lobbies() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_b))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -1401,7 +1402,7 @@ async fn test_can_rejoin_same_lobby() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -1450,7 +1451,7 @@ async fn test_invite_friends_to_private_lobby() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_a))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": true}"#)
+        .body(r#"{"is_private": true, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -1556,7 +1557,7 @@ async fn test_only_owner_can_invite() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_a))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -1684,7 +1685,7 @@ async fn test_lobby_response_visibility() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_a))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -1842,7 +1843,7 @@ async fn test_cache_control_headers_on_sensitive_endpoints() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -1881,7 +1882,7 @@ async fn test_sse_stream_cache_headers() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": false}"#)
+        .body(r#"{"is_private": false, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
@@ -1934,7 +1935,7 @@ async fn test_whitelist_not_exposed_to_non_whitelisted_players() {
 
     // Create private lobby with whitelist
     let create_lobby_body = json!({
-        "is_private": true,
+        "is_private": true, "game_id": "test_game",
         "whitelist": [pubkey_b.clone(), pubkey_c.clone()]
     });
     let response = client
@@ -2018,7 +2019,7 @@ async fn test_invite_response_does_not_leak_public_keys() {
         .post(format!("http://{}/lobbies", addr))
         .header("Authorization", format!("Bearer {}", token_a))
         .header("Content-Type", "application/json")
-        .body(r#"{"is_private": true}"#)
+        .body(r#"{"is_private": true, "game_id": "test_game"}"#)
         .send()
         .await
         .unwrap();
