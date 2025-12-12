@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Matchbox Web Components Test</title>
+    <title>Allumette Web Components Test</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -43,20 +43,20 @@
     </style>
 </head>
 <body>
-    <h1>Matchbox Web Components Test</h1>
+    <h1>Allumette Web Components Test</h1>
     
     <div class="info">
         <h3>📦 Web Component Demo</h3>
-        <p>This page demonstrates the Matchbox authentication component as a web component.</p>
-        <p>The component is loaded from: <code>web-components/matchbox-web.es.js</code></p>
+        <p>This page demonstrates the Allumette authentication component as a web component.</p>
+        <p>The component is loaded from: <code>web-components/allumette-web.es.js</code></p>
         <p>Dependencies: <code>argon2-browser</code> (loaded from CDN)</p>
     </div>
 
     <div class="container">
         <!-- Web Component Usage -->
-        <matchbox-auth></matchbox-auth>
-        <matchbox-lobbies></matchbox-lobbies>
-        <matchbox-friends-list></matchbox-friends-list>
+        <allumette-auth></allumette-auth>
+        <allumette-lobbies></allumette-lobbies>
+        <allumette-friends-list></allumette-friends-list>
     </div>
 
     <!-- Load argon2-browser from CDN -->
@@ -64,25 +64,25 @@
     
     <!-- Load the web component bundle -->
     <script type="module">
-        import * as MatchboxWeb from './web-components/matchbox-web.es.js';
+        import * as AllumetteWeb from './web-components/allumette-web.es.js';
         
-        console.log('Matchbox Web Components loaded:', MatchboxWeb);
+        console.log('Allumette Web Components loaded:', AllumetteWeb);
         
         // You can also access the service functions programmatically
-        window.MatchboxWeb = MatchboxWeb;
+        window.AllumetteWeb = AllumetteWeb;
         
         // Listen for custom events if needed
-        const authComponent = document.querySelector('matchbox-auth');
+        const authComponent = document.querySelector('allumette-auth');
         if (authComponent) {
-            console.log('matchbox-auth component found:', authComponent);
+            console.log('allumette-auth component found:', authComponent);
         }
     </script>
 
     <script>
         // Example: Using service functions programmatically (after login)
         window.addEventListener('load', () => {
-            console.log('Page loaded. Matchbox Web ready!');
-            console.log('Available functions:', Object.keys(window.MatchboxWeb || {}));
+            console.log('Page loaded. Allumette Web ready!');
+            console.log('Available functions:', Object.keys(window.AllumetteWeb || {}));
         });
     </script>
 </body>

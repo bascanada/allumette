@@ -1,10 +1,10 @@
-name: Build and publish matchbox-web to npm
+name: Build and publish allumette-web to npm
 
 on:
   push:
     branches: [ "main" ]
     paths:
-      - 'matchbox_web/**'
+      - 'allumette_web/**'
       - '.github/workflows/publish-npm.yaml'
 
 permissions:
@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: matchbox_web
+        working-directory: allumette_web
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,7 +36,7 @@ jobs:
           # if previous commit exists, compare package.json versions
           if git rev-parse HEAD^1 >/dev/null 2>&1; then
             PREV_COMMIT=$(git rev-parse HEAD^1)
-            git show $PREV_COMMIT:matchbox_web/package.json > package_prev.json
+            git show $PREV_COMMIT:allumette_web/package.json > package_prev.json
             NEW_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")
             OLD_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package_prev.json','utf8')).version)")
             echo "old=$OLD_VERSION" >> $GITHUB_OUTPUT

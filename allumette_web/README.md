@@ -1,10 +1,10 @@
-# Matchbox Web Components
+# Allumette Web Components
 
-UI components for the Matchbox matchmaking server.
+UI components for the Allumette matchmaking server.
 
 ## Components
 
-### MatchboxLobbies
+### AllumetteLobbies
 
 A component that displays a list of available lobbies and allows users to create, join, and delete lobbies.
 

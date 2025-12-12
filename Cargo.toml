@@ -1,5 +1,5 @@
 [package]
-name = "matchbox_server"
+name = "allumette_server"
 version = "0.11.0"
 edition = "2021"
 description = "A signaling server for WebRTC peer-to-peer full-mesh networking"
@@ -9,7 +9,7 @@ license = "Apache-2.0"
 path = "src/lib.rs"
 
 [[bin]]
-name = "matchbox_server"
+name = "allumette_server"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,5 +1,5 @@
 <script>
-    import { friendsList, generateMyFriendCode, addFriendFromCode, removeFriend, isLoggedIn } from '../matchbox-service.js';
+    import { friendsList, generateMyFriendCode, addFriendFromCode, removeFriend, isLoggedIn } from '../allumette-service.js';
     import PubKeyDisplay from './PubKeyDisplay.svelte';
 
     let friendCodeToAdd = '';

@@ -38,7 +38,7 @@ jobs:
         run: make test
       - name: Style Check
         run: make format
-      - name: Build matchbox
-        run: make build_docker_matchbox_server 
-      - name: Publish docker matchbox
-        run: make push_docker_matchbox_server
+      - name: Build allumette
+        run: make build_docker_allumette_server 
+      - name: Publish docker allumette
+        run: make push_docker_allumette_server

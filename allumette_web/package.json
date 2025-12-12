@@ -1,5 +1,5 @@
 {
-	"name": "@bascanada/matchbox-web",
+	"name": "@bascanada/allumette-web",
 	"version": "0.0.2",
 	"scripts": {
 		"dev": "vite dev",
@@ -28,9 +28,8 @@
 			"svelte": "./dist/index.js"
 		},
 		"./web-components": {
-			"types": "./dist/web-components.d.ts",
-			"import": "./dist/web-components/matchbox-web.es.js",
-			"require": "./dist/web-components/matchbox-web.umd.js"
+			"import": "./dist/web-components/allumette-web.es.js",
+			"require": "./dist/web-components/allumette-web.umd.js"
 		}
 	},
 	"peerDependencies": {

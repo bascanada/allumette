@@ -1,5 +1,5 @@
 <script>
-  import { createLobby, friendsList } from '../matchbox-service.js';
+  import { createLobby, friendsList } from '../allumette-service.js';
   import { toast } from '@zerodevx/svelte-toast';
 
   let isPrivate = false;

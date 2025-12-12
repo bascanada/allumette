@@ -29,10 +29,10 @@ jobs:
         run: sudo apt-get install g++ make pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-x11-0 libwayland-dev libxkbcommon-dev && rustup component add rustfmt
       - name: Dependencies
         run: cargo vendor
-      - name: Build docker matchbox
-        run: make build_docker_matchbox_server
-      - name: Publish docker matchbox
-        run: make push_docker_matchbox_server
+      - name: Build docker allumette
+        run: make build_docker_allumette_server
+      - name: Publish docker allumette
+        run: make push_docker_allumette_server
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         env:

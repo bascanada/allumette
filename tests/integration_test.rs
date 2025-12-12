@@ -1,4 +1,4 @@
-use matchbox_server::helpers;
+use allumette_server::helpers;
 use reqwest::Client;
 use serde_json::{json, Value};
 use serial_test::serial;
@@ -11,7 +11,7 @@ async fn spawn_app() -> SocketAddr {
     let addr = listener.local_addr().unwrap();
     drop(listener);
     tokio::spawn(async move {
-        matchbox_server::run(addr).await.unwrap();
+        allumette_server::run(addr).await.unwrap();
     });
     sleep(Duration::from_millis(100)).await;
     addr

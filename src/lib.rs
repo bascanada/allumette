@@ -28,7 +28,7 @@ pub fn setup_logging() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "matchbox_server=info,tower_http=debug".into()),
+                .unwrap_or_else(|_| "allumette_server=info,tower_http=debug".into()),
         )
         .with(
             tracing_subscriber::fmt::layer()
@@ -77,7 +77,7 @@ pub async fn run(addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
             let secret = AuthSecret(secret);
             move |connection| {
                 tracing::info!(origin = ?connection.origin, path = ?connection.path, "WebSocket connection attempt");
-                // Extract token from path (matchbox stores path without leading /)
+                // Extract token from path (allumette stores path without leading /)
                 let token = connection
                     .path
                     .as_ref()

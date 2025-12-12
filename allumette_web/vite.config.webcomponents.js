@@ -13,8 +13,8 @@ export default defineConfig({
 		emptyOutDir: false, // Don't empty the dist folder
 		lib: {
 			entry: 'src/lib/web-components.js',
-			name: 'MatchboxWeb',
-			fileName: (format) => `web-components/matchbox-web.${format}.js`,
+			name: 'AllumetteWeb',
+			fileName: (format) => `web-components/allumette-web.${format}.js`,
 			formats: ['es', 'umd']
 		},
 		rollupOptions: {

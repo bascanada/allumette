@@ -1,7 +1,7 @@
 <script>
-  import MatchboxAuth from '$lib/components/MatchboxAuth.svelte';
-  import MatchboxFriendsList from '$lib/components/MatchboxFriendsList.svelte';
-  import MatchboxLobbies from '$lib/components/MatchboxLobbies.svelte';
+  import AllumetteAuth from '$lib/components/AllumetteAuth.svelte';
+  import AllumetteFriendsList from '$lib/components/AllumetteFriendsList.svelte';
+  import AllumetteLobbies from '$lib/components/AllumetteLobbies.svelte';
   import { toast } from '@zerodevx/svelte-toast';
 
   // Clipboard helper with fallback for environments where navigator.clipboard isn't available
@@ -44,18 +44,18 @@
 </script>
 
 <div class="page-container">
-  <h1>Matchbox Auth Component Test</h1>
+  <h1>Allumette Auth Component Test</h1>
 
   <div class="info">
     <h3>📦 Svelte Integration Demo</h3>
-    <p>This page demonstrates the Matchbox authentication component and friends list as Svelte components.</p>
+    <p>This page demonstrates the Allumette authentication component and friends list as Svelte components.</p>
     <p>Use the auth component to create/login; the friends list will appear when you're logged in.</p>
   </div>
 
   <div class="components">
-    <MatchboxAuth />
-    <MatchboxFriendsList />
-    <MatchboxLobbies onJoinLobby={handleStartFromLobby} />
+    <AllumetteAuth />
+    <AllumetteFriendsList />
+    <AllumetteLobbies onJoinLobby={handleStartFromLobby} />
   </div>
 </div>
 

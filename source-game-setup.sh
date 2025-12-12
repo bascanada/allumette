@@ -1,7 +1,7 @@
 #!/bin/bash
 # Usage: source ./source-game-setup.sh <num_players> [server_url]
 # Example: source ./source-game-setup.sh 4
-# Example: source ./source-game-setup.sh 4 https://matchbox.example.com
+# Example: source ./source-game-setup.sh 4 https://allumette.example.com
 #
 # This script exports TOKEN_1, TOKEN_2, etc. directly to your current shell
 
@@ -18,7 +18,7 @@ echo "Setting up multiplayer game with $NUM_PLAYERS players..."
 
 # Get the directory where this script is located
 # When sourced, BASH_SOURCE[0] contains the path to the script
-SCRIPT_DIR=$HOME/Project/bascanada/matchbox-server
+SCRIPT_DIR=$HOME/Project/bascanada/allumette-server
 
 
 # Function to authenticate a player and get token

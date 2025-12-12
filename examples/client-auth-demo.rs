@@ -1,7 +1,7 @@
 //! A command-line tool to demonstrate the client-side authentication flow.
 use anyhow::Result;
 use clap::Parser;
-use matchbox_server::helpers;
+use allumette_server::helpers;
 use serde_json::Value;
 
 #[derive(Parser, Debug)]

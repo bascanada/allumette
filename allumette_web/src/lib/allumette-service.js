@@ -21,10 +21,10 @@ const browser = typeof window !== 'undefined';
 
 export const isLoggedIn = writable(false);
 export const currentUser = writable(null);
-export const jwt = writable(browser ? localStorage.getItem('matchbox-jwt') : null);
-export const recoveryPhrase = writable(browser ? localStorage.getItem('matchbox-recovery') : null);
+export const jwt = writable(browser ? localStorage.getItem('allumette-jwt') : null);
+export const recoveryPhrase = writable(browser ? localStorage.getItem('allumette-recovery') : null);
 export const friendsList = writable(
-    browser ? JSON.parse(localStorage.getItem('matchbox-friends') || '[]') : []
+    browser ? JSON.parse(localStorage.getItem('allumette-friends') || '[]') : []
 );
 export const lobbies = writable([]);
 
@@ -44,7 +44,7 @@ jwt.subscribe(token => {
     if (!token) {
         isLoggedIn.set(false);
         currentUser.set(null);
-        localStorage.removeItem('matchbox-jwt');
+        localStorage.removeItem('allumette-jwt');
         return;
     }
 
@@ -55,7 +55,7 @@ jwt.subscribe(token => {
         jwt.set(null);
         isLoggedIn.set(false);
         currentUser.set(null);
-        localStorage.removeItem('matchbox-jwt');
+        localStorage.removeItem('allumette-jwt');
         try { toast.push('Invalid session. Please log in again.'); } catch (e) { /* ignore */ }
         return;
     }
@@ -67,14 +67,14 @@ jwt.subscribe(token => {
         jwt.set(null);
         isLoggedIn.set(false);
         currentUser.set(null);
-        localStorage.removeItem('matchbox-jwt');
+        localStorage.removeItem('allumette-jwt');
         try { toast.push('Your session has expired. Please log in again.'); } catch (e) { /* ignore */ }
         return;
     }
 
     // Token is valid
     isLoggedIn.set(true);
-    localStorage.setItem('matchbox-jwt', token);
+    localStorage.setItem('allumette-jwt', token);
     currentUser.set({
         username: claims.username,
         publicKey: claims.sub,
@@ -86,16 +86,16 @@ jwt.subscribe(token => {
 recoveryPhrase.subscribe(phrase => {
   if (!browser) return;
   if (phrase) {
-    localStorage.setItem('matchbox-recovery', phrase);
+    localStorage.setItem('allumette-recovery', phrase);
   } else {
-    localStorage.removeItem('matchbox-recovery');
+    localStorage.removeItem('allumette-recovery');
   }
 });
 
 // Persist friends list to localStorage
 friendsList.subscribe(list => {
     if (!browser) return;
-    localStorage.setItem('matchbox-friends', JSON.stringify(list));
+    localStorage.setItem('allumette-friends', JSON.stringify(list));
 });
 
 
@@ -726,8 +726,8 @@ export async function inviteToLobby(lobbyId, playerPublicKeys) {
 
 
 /**
- * Allows changing the Matchbox server URL.
- * @param {string} newUrl - The new URL for the Matchbox server.
+ * Allows changing the Allumette server URL.
+ * @param {string} newUrl - The new URL for the Allumette server.
  */
 export function setApiUrl(newUrl) {
     API_BASE_URL.set(newUrl);

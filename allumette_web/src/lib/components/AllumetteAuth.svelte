@@ -1,4 +1,4 @@
-<svelte:options customElement="matchbox-auth" />
+<svelte:options customElement="allumette-auth" />
 
 <script>
   import {
@@ -9,7 +9,7 @@
     recoverAccount,
     isLoggedIn,
     currentUser,
-  } from "../matchbox-service.js";
+  } from "../allumette-service.js";
 
   // Component state
   let view = "initial"; // 'initial', 'secretKeyLogin', 'secretKeySignUp', 'walletLogin', 'secretKeyRecover'
@@ -110,7 +110,7 @@
   }
 </script>
 
-<div class="matchbox-auth-container">
+<div class="allumette-auth-container">
   {#if view === 'loggedIn'}
     <div class="welcome-view">
       <h3>Welcome, {$currentUser?.username}</h3>
@@ -244,7 +244,7 @@
 </div>
 
 <style>
-  .matchbox-auth-container {
+  .allumette-auth-container {
     font-family: sans-serif;
     border: 1px solid #ccc;
     border-radius: 8px;

@@ -52,13 +52,13 @@ test:
 run:
 	APP_VERSION=$(VERSION) JWT_SECRET=secret cargo run
 
-build_docker_matchbox_server:
-	docker build -f ./Dockerfile ./ -t ghcr.io/bascanada/matchbox_server:latest
+build_docker_allumette_server:
+	docker build -f ./Dockerfile ./ -t ghcr.io/bascanada/allumette_server:latest
 
 
 # Publish
-push_docker_matchbox_server:
-	docker push ghcr.io/bascanada/matchbox_server:latest
+push_docker_allumette_server:
+	docker push ghcr.io/bascanada/allumette_server:latest
 
 print_version:
 	@echo "Current Tag: $(CURRENT_TAG)"

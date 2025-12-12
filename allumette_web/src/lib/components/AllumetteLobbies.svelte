@@ -8,15 +8,15 @@
     export let onJoinLobby = null;
 </script>
 
-<div class="matchbox-lobbies-container">
+<div class="allumette-lobbies-container">
     <SvelteToast />
-    <h1>Matchbox Lobbies</h1>
+    <h1>Allumette Lobbies</h1>
     <CreateLobby />
     <LobbyList {onJoinLobby} />
 </div>
 
 <style>
-    .matchbox-lobbies-container {
+    .allumette-lobbies-container {
         font-family: sans-serif;
     }
 </style>

@@ -1,5 +1,5 @@
 use clap::Parser;
-use matchbox_server::{args::Args, run, setup_logging};
+use allumette_server::{args::Args, run, setup_logging};
 use std::error::Error;
 
 #[tokio::main]

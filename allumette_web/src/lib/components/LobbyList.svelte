@@ -1,6 +1,6 @@
 <script>
     import { onMount, onDestroy } from 'svelte';
-    import { lobbies, getLobbies, connectLobbyStream, disconnectLobbyStream, joinLobby, deleteLobby, inviteToLobby, friendsList, currentUser, isLoggedIn, jwt } from '../matchbox-service.js';
+    import { lobbies, getLobbies, connectLobbyStream, disconnectLobbyStream, joinLobby, deleteLobby, inviteToLobby, friendsList, currentUser, isLoggedIn, jwt } from '../allumette-service.js';
     import { toast } from '@zerodevx/svelte-toast';
 
     // Callback function that will be called when joining a lobby
@@ -247,7 +247,7 @@
 {:else}
 <div class="lobby-list-container">
     <p>Please log in to view and manage lobbies.</p>
-    <!-- Optionally the MatchboxAuth component could be shown here in the future -->
+    <!-- Optionally the AllumetteAuth component could be shown here in the future -->
 </div>
 {/if}
 
