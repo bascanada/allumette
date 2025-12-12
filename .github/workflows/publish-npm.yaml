@@ -36,7 +36,17 @@ jobs:
           # if previous commit exists, compare package.json versions
           if git rev-parse HEAD^1 >/dev/null 2>&1; then
             PREV_COMMIT=$(git rev-parse HEAD^1)
-            git show $PREV_COMMIT:allumette_web/package.json > package_prev.json
+            
+            # Try to find package.json in previous commit (handling rename from matchbox_web to allumette_web)
+            if git show $PREV_COMMIT:allumette_web/package.json > package_prev.json 2>/dev/null; then
+              echo "Found allumette_web/package.json in previous commit"
+            elif git show $PREV_COMMIT:matchbox_web/package.json > package_prev.json 2>/dev/null; then
+              echo "Found matchbox_web/package.json in previous commit"
+            else
+              echo "Could not find package.json in previous commit. Defaulting to version 0.0.0"
+              echo '{"version": "0.0.0"}' > package_prev.json
+            fi
+
             NEW_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")
             OLD_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package_prev.json','utf8')).version)")
             echo "old=$OLD_VERSION" >> $GITHUB_OUTPUT
