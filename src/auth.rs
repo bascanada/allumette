@@ -1,5 +1,4 @@
 use axum::{
-    async_trait,
     extract::{FromRef, FromRequestParts},
     http::{header, request::Parts, StatusCode},
     response::{IntoResponse, Response},
@@ -115,7 +114,6 @@ pub fn issue_jwt(
     )
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for Claims
 where
     AuthSecret: FromRef<S>,

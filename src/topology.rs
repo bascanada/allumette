@@ -89,7 +89,7 @@ impl SignalingTopology<NoCallbacks, ServerState> for MatchmakingDemoTopology {
         };
 
         if let Some(players) = players {
-            let event = Message::Text(JsonPeerEvent::NewPeer(peer_id).to_string());
+            let event = Message::Text(JsonPeerEvent::NewPeer(peer_id).to_string().into());
             for player_id_str in players {
                 if player_id_str != player_id {
                     let players_to_peers = state.players_to_peers.read().unwrap();
@@ -130,7 +130,8 @@ impl SignalingTopology<NoCallbacks, ServerState> for MatchmakingDemoTopology {
                             sender: peer_id,
                             data,
                         }
-                        .to_string(),
+                        .to_string()
+                        .into(),
                     );
                     if let Err(e) = state.try_send(receiver, event) {
                         error!("error sending to {receiver:?}: {e:?}");
@@ -171,7 +172,7 @@ impl SignalingTopology<NoCallbacks, ServerState> for MatchmakingDemoTopology {
         };
 
         if let Some(players) = players {
-            let event = Message::Text(JsonPeerEvent::PeerLeft(peer_id).to_string());
+            let event = Message::Text(JsonPeerEvent::PeerLeft(peer_id).to_string().into());
             for player_id_str in players {
                 if player_id_str != player_id {
                     let players_to_peers = state.players_to_peers.read().unwrap();
