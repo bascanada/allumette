@@ -64,7 +64,7 @@ echo "Player 1 creating private lobby with whitelist..."
 LOBBY_ID=$(curl -s -X POST "$SERVER_URL/lobbies" \
   -H "Authorization: Bearer ${TOKENS[1]}" \
   -H 'Content-Type: application/json' \
-  -d "{\"is_private\":true,\"whitelist\":$WHITELIST_JSON}" | jq -r '.id')
+  -d "{\"is_private\":true,\"game_id\":\"allumette\",\"whitelist\":$WHITELIST_JSON}" | jq -r '.id')
 
 if [ -z "$LOBBY_ID" ] || [ "$LOBBY_ID" = "null" ]; then
   echo "Error: Failed to create lobby" >&2
