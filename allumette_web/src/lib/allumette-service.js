@@ -455,6 +455,27 @@ export function removeFriend(publicKey) {
 // --- Lobby Management ---
 
 /**
+ * Fetches ICE servers (TURN/STUN) configuration.
+ * @returns {Promise<object[]>} Array of RTCIceServer objects.
+ */
+export async function getIceServers() {
+    const token = get(jwt);
+    if (!token) return [];
+
+    try {
+        const response = await fetch(`${apiBaseUrlValue}/ice-servers`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) throw new Error('Failed to fetch ICE servers');
+        return await response.json();
+    } catch (e) {
+        console.warn('Could not fetch ICE servers, defaulting to STUN only:', e);
+        // Fallback to Google STUN if API fails
+        return [{ urls: ["stun:stun.l.google.com:19302"] }];
+    }
+}
+
+/**
  * Fetches the list of all lobbies (one-time fetch).
  */
 export async function getLobbies() {
