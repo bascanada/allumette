@@ -4,9 +4,11 @@ pub mod helpers;
 pub mod lobby;
 pub mod state;
 pub mod topology;
-
 use crate::{auth::AuthSecret, state::ServerState, topology::MatchmakingDemoTopology};
 use axum::http::HeaderMap;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use hmac::{Hmac, Mac};
+use sha1::Sha1;
 use axum::{
     extract::{FromRef, Path, State},
     http::StatusCode,
@@ -43,6 +45,8 @@ pub fn setup_logging() {
 pub struct AppState {
     pub state: ServerState,
     pub secret: AuthSecret,
+    pub turn_secret: Option<String>,
+    pub turn_urls: Option<Vec<String>>,
 }
 
 impl FromRef<AppState> for AuthSecret {
@@ -55,10 +59,18 @@ pub async fn run(addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     let secret = std::env::var("JWT_SECRET")
         .unwrap_or_else(|_| "test-secret-key-for-development-only".to_string());
+
+    let turn_secret = std::env::var("TURN_SECRET").ok();
+    let turn_urls = std::env::var("TURN_URLS")
+        .ok()
+        .map(|s| s.split(',').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect());
+
     let state = ServerState::default();
     let app_state = AppState {
         state: state.clone(),
         secret: AuthSecret(secret.clone()),
+        turn_secret,
+        turn_urls,
     };
     let app_router = app(app_state);
 
@@ -145,6 +157,7 @@ fn app(state: AppState) -> Router {
         .route("/lobbies/{lobby_id}/join", post(join_lobby_handler))
         .route("/lobbies/{lobby_id}", delete(delete_lobby_handler))
         .route("/lobbies/{lobby_id}/invite", post(invite_to_lobby_handler))
+        .route("/ice-servers", get(get_ice_servers_handler))
         // TODO: Restrict CORS for production environments
         .layer(CorsLayer::very_permissive())
         .with_state(state)
@@ -161,6 +174,130 @@ fn add_no_cache_headers(mut response: axum::response::Response) -> axum::respons
     headers.insert("Pragma", "no-cache".parse().unwrap());
     headers.insert("Expires", "0".parse().unwrap());
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        Router,
+    };
+    use tower::ServiceExt;
+
+    // Helper to create a test app with mock state
+    fn test_app() -> Router {
+        let state = ServerState::default();
+        let app_state = AppState {
+            state,
+            secret: AuthSecret("test-secret".to_string()),
+            turn_secret: Some("test-turn-secret".to_string()),
+            turn_urls: Some(vec!["turn:example.com".to_string()]),
+        };
+        app(app_state)
+    }
+
+    #[tokio::test]
+    async fn test_ice_servers_unauthorized() {
+        let app = test_app();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/ice-servers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_ice_servers_authorized() {
+        let app = test_app();
+
+        // Create a valid JWT
+        let secret = AuthSecret("test-secret".to_string());
+        let token = auth::issue_jwt(
+            "test_pubkey".to_string(),
+            "test_user".to_string(),
+            &secret
+        ).unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/ice-servers")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let ice_servers: Vec<IceServer> = serde_json::from_slice(&body_bytes).unwrap();
+
+        // Should have 2 entries: default STUN + configured TURN
+        assert_eq!(ice_servers.len(), 2);
+
+        // Check default STUN
+        assert_eq!(ice_servers[0].urls[0], "stun:stun.l.google.com:19302");
+        assert!(ice_servers[0].username.is_none());
+
+        // Check TURN
+        assert_eq!(ice_servers[1].urls[0], "turn:example.com");
+        assert!(ice_servers[1].username.is_some());
+        assert!(ice_servers[1].credential.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_ice_servers_stun_only() {
+        let state = ServerState::default();
+        let app_state = AppState {
+            state,
+            secret: AuthSecret("test-secret".to_string()),
+            turn_secret: None,
+            turn_urls: None,
+        };
+        let app = app(app_state);
+
+        // Create a valid JWT
+        let secret = AuthSecret("test-secret".to_string());
+        let token = auth::issue_jwt(
+            "test_pubkey".to_string(),
+            "test_user".to_string(),
+            &secret
+        ).unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/ice-servers")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let ice_servers: Vec<IceServer> = serde_json::from_slice(&body_bytes).unwrap();
+
+        // Should have 1 entry: default STUN only
+        assert_eq!(ice_servers.len(), 1);
+
+        // Check default STUN
+        assert_eq!(ice_servers[0].urls[0], "stun:stun.l.google.com:19302");
+        assert!(ice_servers[0].username.is_none());
+    }
 }
 
 #[derive(Serialize)]
@@ -233,6 +370,45 @@ async fn login_handler(
             Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to issue token"))
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct IceServer {
+    urls: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    credential: Option<String>,
+}
+
+async fn get_ice_servers_handler(
+    State(state): State<AppState>,
+    _claims: auth::Claims,
+) -> impl IntoResponse {
+    let mut ice_servers = vec![IceServer {
+        urls: vec!["stun:stun.l.google.com:19302".to_string()],
+        username: None,
+        credential: None,
+    }];
+
+    if let (Some(turn_secret), Some(turn_urls)) = (&state.turn_secret, &state.turn_urls) {
+        let expiration = chrono::Utc::now().timestamp() + 24 * 3600; // 24h from now
+        let username = format!("{}:{}", expiration, uuid::Uuid::new_v4());
+
+        type HmacSha1 = Hmac<Sha1>;
+        let mut mac = HmacSha1::new_from_slice(turn_secret.as_bytes())
+            .expect("HMAC can take key of any size");
+        mac.update(username.as_bytes());
+        let credential = BASE64.encode(mac.finalize().into_bytes());
+
+        ice_servers.push(IceServer {
+            urls: turn_urls.clone(),
+            username: Some(username),
+            credential: Some(credential),
+        });
+    }
+
+    add_no_cache_headers(Json(ice_servers).into_response())
 }
 
 #[derive(Deserialize)]
