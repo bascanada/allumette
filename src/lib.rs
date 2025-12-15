@@ -26,6 +26,9 @@ use tower_http::cors::CorsLayer;
 use tracing::info;
 use tracing_subscriber::prelude::*;
 
+const DEFAULT_STUN_URL: &str = "stun:stun.l.google.com:19302";
+const TURN_CREDENTIAL_TTL: i64 = 24 * 60 * 60; // 24 hours
+
 pub fn setup_logging() {
     tracing_subscriber::registry()
         .with(
@@ -47,6 +50,7 @@ pub struct AppState {
     pub secret: AuthSecret,
     pub turn_secret: Option<String>,
     pub turn_urls: Option<Vec<String>>,
+    pub stun_url: String,
 }
 
 impl FromRef<AppState> for AuthSecret {
@@ -65,12 +69,15 @@ pub async fn run(addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
         .ok()
         .map(|s| s.split(',').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect());
 
+    let stun_url = std::env::var("STUN_URL").unwrap_or_else(|_| DEFAULT_STUN_URL.to_string());
+
     let state = ServerState::default();
     let app_state = AppState {
         state: state.clone(),
         secret: AuthSecret(secret.clone()),
         turn_secret,
         turn_urls,
+        stun_url,
     };
     let app_router = app(app_state);
 
@@ -194,6 +201,7 @@ mod tests {
             secret: AuthSecret("test-secret".to_string()),
             turn_secret: Some("test-turn-secret".to_string()),
             turn_urls: Some(vec!["turn:example.com".to_string()]),
+            stun_url: DEFAULT_STUN_URL.to_string(),
         };
         app(app_state)
     }
@@ -264,6 +272,7 @@ mod tests {
             secret: AuthSecret("test-secret".to_string()),
             turn_secret: None,
             turn_urls: None,
+            stun_url: DEFAULT_STUN_URL.to_string(),
         };
         let app = app(app_state);
 
@@ -386,18 +395,23 @@ async fn get_ice_servers_handler(
     _claims: auth::Claims,
 ) -> impl IntoResponse {
     let mut ice_servers = vec![IceServer {
-        urls: vec!["stun:stun.l.google.com:19302".to_string()],
+        urls: vec![state.stun_url.clone()],
         username: None,
         credential: None,
     }];
 
     if let (Some(turn_secret), Some(turn_urls)) = (&state.turn_secret, &state.turn_urls) {
-        let expiration = chrono::Utc::now().timestamp() + 24 * 3600; // 24h from now
+        let expiration = chrono::Utc::now().timestamp() + TURN_CREDENTIAL_TTL;
         let username = format!("{}:{}", expiration, uuid::Uuid::new_v4());
 
         type HmacSha1 = Hmac<Sha1>;
-        let mut mac = HmacSha1::new_from_slice(turn_secret.as_bytes())
-            .expect("HMAC can take key of any size");
+        let mut mac = match HmacSha1::new_from_slice(turn_secret.as_bytes()) {
+            Ok(mac) => mac,
+            Err(e) => {
+                tracing::error!("Failed to create HMAC: {}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response();
+            }
+        };
         mac.update(username.as_bytes());
         let credential = BASE64.encode(mac.finalize().into_bytes());
 
