@@ -460,18 +460,24 @@ export function removeFriend(publicKey) {
  */
 export async function getIceServers() {
     const token = get(jwt);
-    if (!token) return [];
+    const fallbackServers = [{ urls: ["stun:stun.l.google.com:19302"] }];
+
+    if (!token) {
+        console.warn('No JWT token for ICE server fetch, defaulting to STUN only.');
+        return fallbackServers;
+    }
 
     try {
         const response = await fetch(`${apiBaseUrlValue}/ice-servers`, {
             headers: { 'Authorization': `Bearer ${token}` },
         });
-        if (!response.ok) throw new Error('Failed to fetch ICE servers');
+        if (!response.ok) {
+            throw new Error(`Failed to fetch ICE servers: ${response.status} ${response.statusText}`);
+        }
         return await response.json();
     } catch (e) {
         console.warn('Could not fetch ICE servers, defaulting to STUN only:', e);
-        // Fallback to Google STUN if API fails
-        return [{ urls: ["stun:stun.l.google.com:19302"] }];
+        return fallbackServers;
     }
 }
 
