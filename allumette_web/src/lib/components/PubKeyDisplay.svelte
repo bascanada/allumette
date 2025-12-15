@@ -1,10 +1,10 @@
 <script>
-  export let pubkey = '';
+  export let pubkey = "";
   export let start = 8; // chars to show at start
   export let end = 4; // chars to show at end
 
   const short = () => {
-    if (!pubkey) return '';
+    if (!pubkey) return "";
     if (pubkey.length <= start + end + 3) return pubkey;
     return `${pubkey.slice(0, start)}...${pubkey.slice(-end)}`;
   };
@@ -16,7 +16,7 @@
   <input
     type="text"
     readonly
-    class="pubkey-display"
+    class="input input-sm font-mono"
     value={pubkey}
     title={pubkey}
     on:click={(e) => e.target.select()}
@@ -30,15 +30,14 @@
     gap: 8px;
     align-items: center;
   }
-  .pubkey-display {
-    font-family: monospace;
-    font-size: 12px;
-    background-color: white;
-    word-break: break-all;
-    border: 1px solid #e1e4e8;
-    padding: 6px 8px;
-    border-radius: 4px;
-    min-width: 120px;
+
+  .input-sm {
+    padding: 0.375rem 0.5rem;
+    font-size: 0.75rem;
   }
-  /* No copy button — users can click the input to select and copy */
+
+  .font-mono {
+    font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo,
+      Consolas, "DejaVu Sans Mono", monospace;
+  }
 </style>
