@@ -1,36 +1,42 @@
 <script>
-    import { friendsList, generateMyFriendCode, addFriendFromCode, removeFriend, isLoggedIn } from '../allumette-service.js';
-    import PubKeyDisplay from './PubKeyDisplay.svelte';
+    import {
+        friendsList,
+        generateMyFriendCode,
+        addFriendFromCode,
+        removeFriend,
+        isLoggedIn,
+    } from "../allumette-service.js";
+    import { toast } from "@zerodevx/svelte-toast";
+    import PubKeyDisplay from "./PubKeyDisplay.svelte";
 
-    let friendCodeToAdd = '';
-    let myFriendCode = '';
-    let errorMessage = '';
-    let successMessage = '';
+    let friendCodeToAdd = "";
 
     function handleAddFriend() {
         if (!friendCodeToAdd) return;
         try {
             addFriendFromCode(friendCodeToAdd);
-            friendCodeToAdd = '';
-            errorMessage = '';
-            successMessage = 'Friend added successfully!';
-            setTimeout(() => successMessage = '', 3000);
+            friendCodeToAdd = "";
+            toast.push("Friend added successfully!", {
+                classes: ["success-toast"],
+            });
         } catch (error) {
-            errorMessage = error.message;
-            successMessage = '';
+            toast.push(error.message, {
+                classes: ["error-toast"],
+            });
         }
     }
 
     async function handleCopyFriendCode() {
         try {
-            myFriendCode = generateMyFriendCode();
+            const myFriendCode = generateMyFriendCode();
             await navigator.clipboard.writeText(myFriendCode);
-            successMessage = 'Your Friend Code has been copied to the clipboard!';
-            errorMessage = '';
-            setTimeout(() => successMessage = '', 3000);
+            toast.push("Your Friend Code has been copied to the clipboard!", {
+                classes: ["success-toast"],
+            });
         } catch (error) {
-            errorMessage = 'Failed to copy Friend Code.';
-            successMessage = '';
+            toast.push("Failed to copy Friend Code.", {
+                classes: ["error-toast"],
+            });
         }
     }
 </script>
@@ -40,76 +46,124 @@
         <h2>Friends</h2>
 
         {#if $friendsList.length === 0}
-            <p>Your friends list is empty. Add a friend using their Friend Code!</p>
+            <p class="text-center">
+                Your friends list is empty. Add a friend using their Friend
+                Code!
+            </p>
         {/if}
 
-            <ul>
-                {#each $friendsList as friend (friend.publicKey)}
-                    <li>
-                        <div class="friend-info">
-                            <strong>{friend.username}</strong>
-                            <PubKeyDisplay pubkey={friend.publicKey} />
-                        </div>
-                        <button on:click={() => removeFriend(friend.publicKey)}>Remove</button>
-                    </li>
-                {/each}
-            </ul>
+        <ul class="list">
+            {#each $friendsList as friend (friend.publicKey)}
+                <li
+                    class="card p-3 variant-soft-surface flex justify-between items-center"
+                >
+                    <div class="friend-info">
+                        <strong>{friend.username}</strong>
+                        <PubKeyDisplay pubkey={friend.publicKey} />
+                    </div>
+                    <button
+                        class="btn-icon variant-filled-error"
+                        on:click={() => removeFriend(friend.publicKey)}
+                        title="Remove friend"
+                        aria-label="Remove {friend.username}"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path d="M3 6h18"></path>
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"
+                            ></path>
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                </li>
+            {/each}
+        </ul>
 
         <div class="add-friend-section">
             <h3>Add Friend</h3>
-            <input type="text" bind:value={friendCodeToAdd} placeholder="Enter Friend Code" />
-            <button on:click={handleAddFriend}>Add</button>
+            <input
+                type="text"
+                bind:value={friendCodeToAdd}
+                placeholder="Enter Friend Code"
+                class="input"
+            />
+            <button
+                class="btn variant-filled-primary"
+                on:click={handleAddFriend}>Add</button
+            >
         </div>
 
         <div class="my-friend-code-section">
-            <button on:click={handleCopyFriendCode}>Share my Friend Code</button>
+            <button
+                class="btn variant-filled-success"
+                on:click={handleCopyFriendCode}>Share my Friend Code</button
+            >
         </div>
-
-        {#if errorMessage}
-            <p class="error">{errorMessage}</p>
-        {/if}
-
-        {#if successMessage}
-            <p class="success">{successMessage}</p>
-        {/if}
     {:else}
-        <p>Please log in to see your friends list.</p>
+        <p class="text-center">Please log in to see your friends list.</p>
     {/if}
 </div>
 
 <style>
     .friends-list-container {
-        font-family: sans-serif;
-        border: 1px solid #ccc;
-        padding: 1em;
-        border-radius: 5px;
         max-width: 400px;
     }
-    ul {
+
+    h2,
+    h3 {
+        color: rgb(var(--color-surface-900));
+    }
+
+    :global(.dark) h2,
+    :global(.dark) h3 {
+        color: rgb(var(--color-surface-50));
+    }
+
+    .list {
         list-style: none;
         padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
     }
-    li {
+
+    .list li {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 0.5em 0;
-        border-bottom: 1px solid #eee;
+        gap: 1rem;
     }
-    .add-friend-section, .my-friend-code-section {
-        margin-top: 1em;
+
+    .friend-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
     }
-    input {
-        width: calc(100% - 60px);
-        padding: 0.5em;
+
+    .friend-info strong {
+        color: rgb(var(--color-surface-900));
     }
-    button {
-        cursor: pointer;
+
+    :global(.dark) .friend-info strong {
+        color: rgb(var(--color-surface-50));
     }
-    .error {
-        color: red;
-    }
-    .success {
-        color: green;
+
+    .add-friend-section,
+    .my-friend-code-section {
+        margin-top: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
     }
 </style>

@@ -1,5 +1,3 @@
-<svelte:options customElement="allumette-auth" />
-
 <script>
   import {
     createAccount,
@@ -10,6 +8,7 @@
     isLoggedIn,
     currentUser,
   } from "../allumette-service.js";
+  import { toast } from "@zerodevx/svelte-toast";
 
   // Component state
   let view = "initial"; // 'initial', 'secretKeyLogin', 'secretKeySignUp', 'walletLogin', 'secretKeyRecover'
@@ -111,254 +110,256 @@
 </script>
 
 <div class="allumette-auth-container">
-  {#if view === 'loggedIn'}
+  {#if view === "loggedIn"}
     <div class="welcome-view">
       <h3>Welcome, {$currentUser?.username}</h3>
       {#if $currentUser?.publicKey}
-        <div class="pubkey-section">
-          <p class="pubkey-label">Your Public Key:</p>
+        <div class="pubkey-section card p-4 variant-soft-surface">
+          <p class="pubkey-label font-semibold">Your Public Key:</p>
           <input
             type="text"
             readonly
-            class="pubkey-display"
+            class="input"
             value={$currentUser.publicKey}
             on:click={(e) => e.target.select()}
           />
-          <button class="copy-button" on:click={() => navigator.clipboard.writeText($currentUser.publicKey)}>
+          <button
+            class="btn variant-filled-success btn-sm mt-2"
+            on:click={() => {
+              navigator.clipboard.writeText($currentUser.publicKey);
+              toast.push("Public key copied!", { classes: ["success-toast"] });
+            }}
+          >
             Copy Public Key
           </button>
         </div>
       {/if}
-      <button on:click={handleLogout}>Log Out</button>
+      <button class="btn variant-filled-surface" on:click={handleLogout}
+        >Log Out</button
+      >
     </div>
-  {:else if view === 'accountCreated'}
+  {:else if view === "accountCreated"}
     <div class="credentials-view">
       <h2>Account Created!</h2>
-      <p class="warning">⚠️ Save these credentials securely. You won't see them again!</p>
-      
+      <div class="alert variant-filled-warning">
+        <p>⚠️ Save these credentials securely. You won't see them again!</p>
+      </div>
+
       <div class="credential-section">
-        <p class="credential-label">Secret Key (like a password)</p>
+        <p class="credential-label font-semibold">
+          Secret Key (like a password)
+        </p>
         <input
           type="text"
           readonly
+          class="input"
           value={secret}
           on:click={(e) => e.target.select()}
         />
-        <button class="copy-button" on:click={() => navigator.clipboard.writeText(secret)}>
+        <button
+          class="btn variant-filled-success btn-sm mt-2"
+          on:click={() => {
+            navigator.clipboard.writeText(secret);
+            toast.push("Secret key copied!", { classes: ["success-toast"] });
+          }}
+        >
           Copy Secret Key
         </button>
       </div>
 
       <div class="credential-section">
-        <p class="credential-label">Recovery Phrase (24 words)</p>
+        <p class="credential-label font-semibold">Recovery Phrase (24 words)</p>
         <textarea
           readonly
           rows="4"
+          class="textarea"
           value={generatedRecoveryPhrase}
           on:click={(e) => e.target.select()}
         ></textarea>
-        <button class="copy-button" on:click={() => navigator.clipboard.writeText(generatedRecoveryPhrase)}>
+        <button
+          class="btn variant-filled-success btn-sm mt-2"
+          on:click={() => {
+            navigator.clipboard.writeText(generatedRecoveryPhrase);
+            toast.push("Recovery phrase copied!", {
+              classes: ["success-toast"],
+            });
+          }}
+        >
           Copy Recovery Phrase
         </button>
       </div>
 
-      <button on:click={handleContinueAfterSignup}>
+      <button
+        class="btn variant-filled-primary"
+        on:click={handleContinueAfterSignup}
+      >
         I've Saved My Credentials - Continue
       </button>
     </div>
-  {:else if view === 'initial'}
+  {:else if view === "initial"}
     <div class="initial-view">
       <h2>Join or Log In</h2>
-      <button on:click={() => view = 'secretKeySignUp'}>
+      <button
+        class="btn variant-filled-primary"
+        on:click={() => (view = "secretKeySignUp")}
+      >
         Create Account with Secret Key
       </button>
-      <button on:click={() => view = 'secretKeyLogin'}>
+      <button
+        class="btn variant-filled-primary"
+        on:click={() => (view = "secretKeyLogin")}
+      >
         Log In with Secret Key
       </button>
-      <button on:click={() => view = 'secretKeyRecover'}>
+      <button
+        class="btn variant-filled-secondary"
+        on:click={() => (view = "secretKeyRecover")}
+      >
         Recover Account
       </button>
-      <button on:click={handleWalletLogin} disabled={isLoading}>
+      <button
+        class="btn variant-filled-tertiary"
+        on:click={handleWalletLogin}
+        disabled={isLoading}
+      >
         {isLoading ? "Connecting..." : "Log In with Wallet"}
       </button>
     </div>
-  {:else if view === 'secretKeySignUp' || view === 'secretKeyLogin'}
+  {:else if view === "secretKeySignUp" || view === "secretKeyLogin"}
     <div class="form-view">
-      <h2>{view === 'secretKeySignUp' ? 'Create Account' : 'Log In'}</h2>
+      <h2>{view === "secretKeySignUp" ? "Create Account" : "Log In"}</h2>
       <input
         type="text"
         placeholder="Username"
+        class="input"
         bind:value={username}
         disabled={isLoading}
       />
-      {#if view === 'secretKeyLogin'}
+      {#if view === "secretKeyLogin"}
         <input
           type="password"
           placeholder="Secret Key (like a password)"
+          class="input"
           bind:value={secret}
           disabled={isLoading}
           autocomplete="off"
         />
       {/if}
-      {#if view === 'secretKeySignUp'}
-        <p class="info-text">A secret key will be generated for you after account creation.</p>
-        <button on:click={handleSecretKeySignUp} disabled={isLoading}>
+      {#if view === "secretKeySignUp"}
+        <p class="info-text text-sm">
+          A secret key will be generated for you after account creation.
+        </p>
+        <button
+          class="btn variant-filled-primary"
+          on:click={handleSecretKeySignUp}
+          disabled={isLoading}
+        >
           {isLoading ? "Creating..." : "Create Account"}
         </button>
       {:else}
-        <button on:click={handleSecretKeyLogin} disabled={isLoading}>
+        <button
+          class="btn variant-filled-primary"
+          on:click={handleSecretKeyLogin}
+          disabled={isLoading}
+        >
           {isLoading ? "Logging in..." : "Log In"}
         </button>
       {/if}
-      <button class="back-button" on:click={() => view = 'initial'} disabled={isLoading}>
+      <button
+        class="btn variant-ghost-surface"
+        on:click={() => (view = "initial")}
+        disabled={isLoading}
+      >
         &larr; Back
       </button>
     </div>
-    {:else if view === 'secretKeyRecover'}
+  {:else if view === "secretKeyRecover"}
     <div class="form-view">
       <h2>Recover Account</h2>
       <input
         type="text"
         placeholder="Username"
+        class="input"
         bind:value={username}
         disabled={isLoading}
       />
       <input
         type="password"
         placeholder="Recovery Phrase"
+        class="input"
         bind:value={recoveryPhrase}
         disabled={isLoading}
       />
-      <button on:click={handleRecovery} disabled={isLoading}>
+      <button
+        class="btn variant-filled-primary"
+        on:click={handleRecovery}
+        disabled={isLoading}
+      >
         {isLoading ? "Recovering..." : "Recover"}
       </button>
-      <button class="back-button" on:click={() => view = 'initial'} disabled={isLoading}>
+      <button
+        class="btn variant-ghost-surface"
+        on:click={() => (view = "initial")}
+        disabled={isLoading}
+      >
         &larr; Back
       </button>
     </div>
   {/if}
 
   {#if error}
-    <p class="error-message">{error}</p>
+    <div class="alert variant-filled-error mt-4">
+      <p>{error}</p>
+    </div>
   {/if}
 </div>
 
 <style>
   .allumette-auth-container {
-    font-family: sans-serif;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    padding: 20px;
-    max-width: 350px;
-    background-color: #f9f9f9;
-  }
-  h2, h3 {
-    text-align: center;
-    color: #333;
-  }
-  button {
-    display: block;
-    width: 100%;
-    padding: 10px;
-    margin: 10px 0;
-    border-radius: 5px;
-    border: none;
-    background-color: #007bff;
-    color: white;
-    font-size: 16px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-  button:hover {
-    background-color: #0056b3;
-  }
-  button:disabled {
-    background-color: #ccc;
-    cursor: not-allowed;
-  }
-  .back-button {
-    background-color: #6c757d;
-  }
-  .back-button:hover {
-    background-color: #5a6268;
-  }
-  input {
-    display: block;
-    width: calc(100% - 20px);
-    padding: 10px;
-    margin: 10px 0;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    font-size: 16px;
-  }
-  .error-message {
-    color: #d93025;
-    text-align: center;
-    margin-top: 10px;
-  }
-  .initial-view, .form-view, .welcome-view {
     display: flex;
     flex-direction: column;
+    gap: 1rem;
+    max-width: 350px;
   }
+
+  h2,
+  h3 {
+    text-align: center;
+    color: rgb(var(--color-surface-900));
+  }
+
+  :global(.dark) h2,
+  :global(.dark) h3 {
+    color: rgb(var(--color-surface-50));
+  }
+
+  .initial-view,
+  .form-view,
+  .welcome-view,
   .credentials-view {
     display: flex;
     flex-direction: column;
+    gap: 0.75rem;
   }
+
   .credential-section {
-    margin: 10px 0;
+    margin: 0.5rem 0;
   }
-  .credential-label {
-    font-weight: bold;
-    margin: 5px 0;
-    color: #333;
-  }
-  .warning {
-    background-color: #fff3cd;
-    border: 1px solid #ffc107;
-    padding: 10px;
-    border-radius: 5px;
-    color: #856404;
-    text-align: center;
-    font-weight: bold;
-  }
+
   .info-text {
-    color: #666;
-    font-size: 14px;
+    color: rgb(var(--color-surface-600));
     text-align: center;
-    margin: 10px 0;
+    margin: 0.5rem 0;
   }
-  .copy-button {
-    background-color: #28a745;
-    margin-top: 5px;
+
+  :global(.dark) .info-text {
+    color: rgb(var(--color-surface-400));
   }
-  .copy-button:hover {
-    background-color: #218838;
-  }
+
   textarea {
-    width: calc(100% - 20px);
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    font-size: 14px;
-    font-family: monospace;
+    font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo,
+      Consolas, "DejaVu Sans Mono", monospace;
     resize: vertical;
-  }
-  .pubkey-section {
-    margin: 15px 0;
-    padding: 10px;
-    background-color: #f0f0f0;
-    border-radius: 5px;
-  }
-  .pubkey-label {
-    font-weight: bold;
-    margin: 5px 0;
-    color: #333;
-    font-size: 14px;
-  }
-  .pubkey-display {
-    font-family: monospace;
-    font-size: 12px;
-    background-color: white;
-    word-break: break-all;
+    min-height: 100px;
   }
 </style>
