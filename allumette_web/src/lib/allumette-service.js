@@ -14,6 +14,8 @@ const API_BASE_URL = writable('http://localhost:3536'); // Default, user can cha
 let apiBaseUrlValue;
 API_BASE_URL.subscribe(value => apiBaseUrlValue = value);
 
+const DEFAULT_ICE_SERVERS = [{ urls: ["stun:stun.l.google.com:19302"] }];
+
 
 // --- State Management ---
 // Check if we're in a browser environment (compatible with all bundlers)
@@ -460,11 +462,10 @@ export function removeFriend(publicKey) {
  */
 export async function getIceServers() {
     const token = get(jwt);
-    const fallbackServers = [{ urls: ["stun:stun.l.google.com:19302"] }];
 
     if (!token) {
         console.warn('No JWT token for ICE server fetch, defaulting to STUN only.');
-        return fallbackServers;
+        return DEFAULT_ICE_SERVERS;
     }
 
     try {
@@ -477,7 +478,7 @@ export async function getIceServers() {
         return await response.json();
     } catch (e) {
         console.warn('Could not fetch ICE servers, defaulting to STUN only:', e);
-        return fallbackServers;
+        return DEFAULT_ICE_SERVERS;
     }
 }
 
