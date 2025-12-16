@@ -14,6 +14,8 @@ const API_BASE_URL = writable('http://localhost:3536'); // Default, user can cha
 let apiBaseUrlValue;
 API_BASE_URL.subscribe(value => apiBaseUrlValue = value);
 
+const DEFAULT_ICE_SERVERS = [{ urls: ["stun:stun.l.google.com:19302"] }];
+
 
 // --- State Management ---
 // Check if we're in a browser environment (compatible with all bundlers)
@@ -453,6 +455,32 @@ export function removeFriend(publicKey) {
 }
 
 // --- Lobby Management ---
+
+/**
+ * Fetches ICE servers (TURN/STUN) configuration.
+ * @returns {Promise<object[]>} Array of RTCIceServer objects.
+ */
+export async function getIceServers() {
+    const token = get(jwt);
+
+    if (!token) {
+        console.warn('No JWT token for ICE server fetch, defaulting to STUN only.');
+        return DEFAULT_ICE_SERVERS;
+    }
+
+    try {
+        const response = await fetch(`${apiBaseUrlValue}/ice-servers`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch ICE servers: ${response.status} ${response.statusText}`);
+        }
+        return await response.json();
+    } catch (e) {
+        console.warn('Could not fetch ICE servers, defaulting to STUN only:', e);
+        return DEFAULT_ICE_SERVERS;
+    }
+}
 
 /**
  * Fetches the list of all lobbies (one-time fetch).

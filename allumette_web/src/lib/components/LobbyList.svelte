@@ -3,6 +3,7 @@
     import {
         lobbies,
         getLobbies,
+        getIceServers,
         connectLobbyStream,
         disconnectLobbyStream,
         joinLobby,
@@ -68,6 +69,9 @@
             if (onJoinLobby && typeof onJoinLobby === "function") {
                 try {
                     const token = $jwt;
+                    // Fetch ICE servers (TURN credentials)
+                    const iceServers = await getIceServers();
+
                     await onJoinLobby({
                         lobbyId: lobby.id,
                         token: token,
@@ -75,6 +79,8 @@
                         isPrivate: lobby.is_private,
                         gameId: lobby.game_id,
                         userPublicKey: $currentUser?.publicKey,
+                        // NEW: Pass as JSON string for easy WASM parsing
+                        iceServersJson: JSON.stringify(iceServers),
                     });
                 } catch (error) {
                     toast.push(error.message || "Failed to start game", {
