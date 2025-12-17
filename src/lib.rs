@@ -141,9 +141,15 @@ pub async fn run(addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         })
-        .cors()
         .trace()
-        .mutate_router(|router| router.merge(app_router))
+        .mutate_router(|router| {
+            // Merge app router and apply CORS to the *entire* router (including signaling routes).
+            // This prevents duplicate CORS headers and ensures consistent behavior.
+            // TODO: Restrict CORS for production environments
+            router
+                .merge(app_router)
+                .layer(CorsLayer::very_permissive())
+        })
         .build();
 
     info!("listening on {}", addr);
@@ -165,8 +171,6 @@ fn app(state: AppState) -> Router {
         .route("/lobbies/{lobby_id}", delete(delete_lobby_handler))
         .route("/lobbies/{lobby_id}/invite", post(invite_to_lobby_handler))
         .route("/ice-servers", get(get_ice_servers_handler))
-        // TODO: Restrict CORS for production environments
-        .layer(CorsLayer::very_permissive())
         .with_state(state)
 }
 
@@ -203,7 +207,7 @@ mod tests {
             turn_urls: Some(vec!["turn:example.com".to_string()]),
             stun_url: DEFAULT_STUN_URL.to_string(),
         };
-        app(app_state)
+        app(app_state).layer(CorsLayer::very_permissive())
     }
 
     #[tokio::test]
@@ -306,6 +310,57 @@ mod tests {
         // Check default STUN
         assert_eq!(ice_servers[0].urls[0], "stun:stun.l.google.com:19302");
         assert!(ice_servers[0].username.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_ice_servers_cors() {
+        let app = test_app();
+
+        // Test CORS for OPTIONS request
+        let response = app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("OPTIONS")
+                    .uri("/ice-servers")
+                    .header("Origin", "http://localhost:3000")
+                    .header("Access-Control-Request-Method", "GET")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("access-control-allow-origin").unwrap(),
+            "http://localhost:3000"
+        );
+
+        // Test CORS for authorized GET request
+        let secret = AuthSecret("test-secret".to_string());
+        let token = auth::issue_jwt(
+            "test_pubkey".to_string(),
+            "test_user".to_string(),
+            &secret
+        ).unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/ice-servers")
+                    .header("Origin", "http://localhost:3000")
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("access-control-allow-origin").unwrap(),
+            "http://localhost:3000"
+        );
     }
 }
 
