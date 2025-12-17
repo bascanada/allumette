@@ -142,10 +142,11 @@ pub async fn run(addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
             }
         })
         .trace()
-        .mutate_router(|mut router| {
+        .mutate_router(|router| {
             // Merge app router and apply CORS to the *entire* router (including signaling routes).
             // This prevents duplicate CORS headers and ensures consistent behavior.
-            std::mem::take(&mut router)
+            // TODO: Restrict CORS for production environments
+            router
                 .merge(app_router)
                 .layer(CorsLayer::very_permissive())
         })
