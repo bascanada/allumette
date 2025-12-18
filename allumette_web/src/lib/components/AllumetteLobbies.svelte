@@ -13,7 +13,7 @@
 <div class="allumette-lobbies-container">
     <SvelteToast />
     <CreateLobby {availableGames} />
-    <LobbyList {onJoinLobby} />
+    <LobbyList {onJoinLobby} {availableGames} />
 </div>
 
 <style>

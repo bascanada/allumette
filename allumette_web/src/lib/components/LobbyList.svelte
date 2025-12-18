@@ -1,5 +1,5 @@
 <script>
-    import { onMount, onDestroy } from "svelte";
+    import { onDestroy } from "svelte";
     import {
         lobbies,
         getLobbies,
@@ -19,11 +19,84 @@
     // Callback function that will be called when joining a lobby
     // Provides: { lobbyId, token, players, isPrivate }
     export let onJoinLobby = null;
+    export let availableGames = [];
 
     let isLoading = false;
     let showInviteModal = false;
     let selectedLobbyForInvite = null;
     let selectedFriendsToInvite = [];
+
+    // Filtering & Sorting State
+    let searchQuery = "";
+    let filterGame = "All";
+    let filterPrivacy = "All";
+    let filterStatus = "All";
+    let sortBy = "created"; // "created" | "players"
+    let sortDirection = "desc"; // "asc" | "desc"
+
+    // Pagination State
+    let currentPage = 1;
+    let itemsPerPage = 5;
+
+    // Reactive Logic
+    $: filteredLobbies = $lobbies.filter((lobby) => {
+        // Search Query (ID or Owner)
+        if (searchQuery) {
+            const query = searchQuery.toLowerCase();
+            const idMatch = lobby.id.toLowerCase().includes(query);
+            // We don't have owner name easily accessible without looking it up, 
+            // but we can check if any player name matches if we wanted.
+            // For now, let's stick to Lobby ID.
+            if (!idMatch) return false;
+        }
+
+        // Game Filter
+        if (filterGame !== "All" && lobby.game_id !== filterGame) return false;
+
+        // Privacy Filter
+        if (filterPrivacy === "Public" && lobby.is_private) return false;
+        if (filterPrivacy === "Private" && !lobby.is_private) return false;
+
+        // Status Filter
+        if (filterStatus === "Waiting" && lobby.status === "InProgress") return false;
+        if (filterStatus === "InProgress" && lobby.status !== "InProgress") return false;
+
+        return true;
+    });
+
+    $: sortedLobbies = [...filteredLobbies].sort((a, b) => {
+        let comparison = 0;
+        if (sortBy === "created") {
+            // Assuming newer lobbies have higher/lexicographically later IDs or we rely on array order.
+            // If IDs are not time-sortable, we might just rely on index.
+            // Let's assume simple string comparison of IDs is a proxy for time if UUIDv7 or similar,
+            // otherwise just stable sort.
+            comparison = a.id.localeCompare(b.id);
+        } else if (sortBy === "players") {
+            comparison = a.players.length - b.players.length;
+        }
+
+        return sortDirection === "asc" ? comparison : -comparison;
+    });
+
+    $: totalPages = Math.ceil(sortedLobbies.length / itemsPerPage);
+    $: paginatedLobbies = sortedLobbies.slice(
+        (currentPage - 1) * itemsPerPage,
+        currentPage * itemsPerPage
+    );
+
+    // Reset to page 1 when filters change
+    $: {
+        searchQuery;
+        filterGame;
+        filterPrivacy;
+        filterStatus;
+        sortBy;
+        sortDirection;
+        itemsPerPage;
+        if (currentPage > totalPages && totalPages > 0) currentPage = 1;
+        if (totalPages === 0) currentPage = 1;
+    }
 
     // A map for quick friend lookups
     let friendMap = {};
@@ -42,7 +115,7 @@
         if (!publicKey) return "Unknown Player";
         // Check if it's the current user
         if ($currentUser?.publicKey === publicKey) {
-            return `${$currentUser.username} (You)`;
+            return $currentUser.username;
         }
         // Check if it's a friend
         return friendMap[publicKey] || `Player ${publicKey.substring(0, 8)}...`;
@@ -199,15 +272,15 @@
         });
     }
 
-    // Connect to SSE stream when component mounts (only if logged in)
-    onMount(() => {
-        if ($isLoggedIn) {
-            // Connect to real-time lobby updates via SSE
-            connectLobbyStream();
-            // Do an initial fetch to get current state immediately
-            fetchLobbies();
-        }
-    });
+    // Connect to SSE stream when login status changes
+    $: if ($isLoggedIn) {
+        // Connect to real-time lobby updates via SSE
+        connectLobbyStream();
+        // Do an initial fetch to get current state immediately
+        fetchLobbies();
+    } else {
+        disconnectLobbyStream();
+    }
 
     // Disconnect from SSE stream when component is destroyed
     onDestroy(() => {
@@ -225,52 +298,109 @@
         {#if $lobbies.length === 0}
             <p class="text-center">No lobbies found.</p>
         {:else}
+            <!-- Controls Bar -->
+            <div class="card p-4 mb-4 space-y-4 variant-soft-surface">
+                <div class="flex flex-col md:flex-row gap-4 justify-between">
+                    <!-- Search -->
+                    <div class="flex-1">
+                        <input
+                            class="input"
+                            type="text"
+                            placeholder="Search Lobby ID..."
+                            bind:value={searchQuery}
+                        />
+                    </div>
+                    
+                    <!-- Filters -->
+                    <div class="flex flex-wrap gap-2">
+                        <select class="select w-auto" bind:value={filterGame}>
+                            <option value="All">All Games</option>
+                            {#each availableGames as game}
+                                <option value={game.id}>{game.name}</option>
+                            {/each}
+                        </select>
+                        <select class="select w-auto" bind:value={filterPrivacy}>
+                            <option value="All">All Privacy</option>
+                            <option value="Public">Public</option>
+                            <option value="Private">Private</option>
+                        </select>
+                        <select class="select w-auto" bind:value={filterStatus}>
+                            <option value="All">All Status</option>
+                            <option value="Waiting">Waiting</option>
+                            <option value="InProgress">In Progress</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex flex-col md:flex-row gap-4 justify-between items-center text-sm">
+                    <div class="flex gap-2 items-center">
+                        <span>Sort by:</span>
+                        <select class="select select-sm w-auto" bind:value={sortBy}>
+                            <option value="created">Creation</option>
+                            <option value="players">Players</option>
+                        </select>
+                        <button 
+                            class="btn-icon btn-icon-sm variant-soft" 
+                            on:click={() => sortDirection = sortDirection === 'asc' ? 'desc' : 'asc'}
+                            title="Toggle Sort Direction"
+                        >
+                            {#if sortDirection === 'asc'}
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
+                                </svg>
+                            {:else}
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3" />
+                                </svg>
+                            {/if}
+                        </button>
+                    </div>
+                    <div>
+                        Showing {paginatedLobbies.length} of {filteredLobbies.length} lobbies
+                    </div>
+                </div>
+            </div>
+
             <div class="table-container w-full">
-                <table class="table table-hover w-full">
+                <table class="table table-hover w-full text-center">
                     <thead>
                         <tr>
-                            <th>Privacy</th>
-                            <th>Game</th>
-                            <th>Lobby ID</th>
-                            <th>State</th>
-                            <th
-                                >Players ({$lobbies.reduce(
-                                    (sum, l) => sum + l.players.length,
-                                    0,
-                                )})</th
-                            >
-                            <th>Actions</th>
+                            <th class="text-center">Privacy</th>
+                            <th class="text-center">Game</th>
+                            <th class="text-center w-1/4">Lobby ID</th>
+                            <th class="text-center">State</th>
+                            <th class="text-center">Players</th>
+                            <th class="text-center">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {#each $lobbies as lobby (lobby.id)}
+                        {#each paginatedLobbies as lobby (lobby.id)}
                             <tr
                                 class:variant-soft-success={isUserInLobby(
                                     lobby,
                                 )}
                             >
-                                <td>
+                                <td data-label="Privacy" class="align-middle">
                                     <span
                                         class="badge {lobby.is_private
                                             ? 'variant-soft-warning'
                                             : 'variant-soft-tertiary'}"
+                                        title={lobby.is_private ? "Private" : "Public"}
                                     >
-                                        {lobby.is_private
-                                            ? "🔒 Private"
-                                            : "🌐 Public"}
+                                        {lobby.is_private ? "🔒" : "🌐"}
                                     </span>
                                 </td>
-                                <td>
+                                <td data-label="Game" class="align-middle">
                                     <span class="badge variant-soft-primary"
                                         >{lobby.game_id || "Unknown"}</span
                                     >
                                 </td>
-                                <td>
-                                    <code class="code text-xs"
-                                        >{lobby.id.substring(0, 8)}...</code
-                                    >
+                                <td data-label="Lobby ID" class="align-middle max-w-[150px] sm:max-w-[250px] md:max-w-xs">
+                                    <div class="truncate" title={lobby.id}>
+                                        <code class="code text-xs">{lobby.id}</code>
+                                    </div>
                                 </td>
-                                <td>
+                                <td data-label="State" class="align-middle">
                                     <span
                                         class="badge {lobby.status ===
                                         'InProgress'
@@ -282,22 +412,25 @@
                                             : "Waiting"}
                                     </span>
                                 </td>
-                                <td>
-                                    <ul class="list-none p-0 m-0 text-sm">
-                                        {#each lobby.players as player}
-                                            <li
-                                                class:font-bold={(typeof player ===
-                                                "string"
-                                                    ? player
-                                                    : player?.publicKey) ===
-                                                    $currentUser?.publicKey}
-                                            >
-                                                {getPlayerDisplayName(player)}
-                                            </li>
-                                        {/each}
-                                    </ul>
+                                <td data-label="Players" class="align-middle">
+                                    {#if !lobby.is_private && !isUserInLobby(lobby)}
+                                        <span class="opacity-70">N/A</span>
+                                    {:else}
+                                        <div class="flex flex-wrap gap-1 justify-center">
+                                            {#each lobby.players as player}
+                                                <span class="badge variant-soft-surface">
+                                                    {#if (typeof player === "string" ? player : player?.publicKey) === $currentUser?.publicKey}
+                                                        <strong>{getPlayerDisplayName(player)}</strong>
+                                                    {:else}
+                                                        {getPlayerDisplayName(player)}
+                                                    {/if}
+                                                </span>
+                                            {/each}
+                                        </div>
+                                    {/if}
                                 </td>
-                                <td class="whitespace-nowrap">
+                                <td class="whitespace-nowrap align-middle" data-label="Actions">
+                                    <div class="flex justify-center w-full actions-container">
                                     {#if !isUserInLobby(lobby)}
                                         {#if lobby.status === "InProgress"}
                                             <button
@@ -316,7 +449,7 @@
                                             </button>
                                         {/if}
                                     {:else}
-                                        <div class="flex gap-2 flex-wrap">
+                                        <div class="flex gap-2 flex-wrap justify-center">
                                             {#if onJoinLobby}
                                                 <button
                                                     class="btn variant-filled-success btn-sm"
@@ -344,7 +477,7 @@
                                                     on:click={() =>
                                                         handleDelete(lobby.id)}
                                                 >
-                                                    🗑️ Delete
+                                                    Delete
                                                 </button>
                                             {:else}
                                                 <button
@@ -352,17 +485,41 @@
                                                     on:click={() =>
                                                         handleDelete(lobby.id)}
                                                 >
-                                                    🚪 Leave
+                                                    Quit
                                                 </button>
                                             {/if}
                                         </div>
                                     {/if}
+                                    </div>
                                 </td>
                             </tr>
                         {/each}
                     </tbody>
                 </table>
             </div>
+
+            <!-- Pagination -->
+            {#if totalPages > 1}
+                <div class="flex justify-center items-center gap-2 mt-4">
+                    <button
+                        class="btn btn-sm variant-soft"
+                        disabled={currentPage === 1}
+                        on:click={() => currentPage--}
+                    >
+                        Previous
+                    </button>
+                    <span class="text-sm">
+                        Page {currentPage} of {totalPages}
+                    </span>
+                    <button
+                        class="btn btn-sm variant-soft"
+                        disabled={currentPage === totalPages}
+                        on:click={() => currentPage++}
+                    >
+                        Next
+                    </button>
+                </div>
+            {/if}
         {/if}
     </div>
 {:else}
@@ -452,5 +609,77 @@
         width: 90%;
         max-height: 80vh;
         overflow-y: auto;
+    }
+
+    @media (max-width: 768px) {
+        /* Force table to not be like tables anymore */
+        table,
+        thead,
+        tbody,
+        th,
+        td,
+        tr {
+            display: block;
+        }
+
+        /* Hide table headers (but not display: none;, for accessibility) */
+        thead tr {
+            position: absolute;
+            top: -9999px;
+            left: -9999px;
+        }
+
+        tr {
+            border: 1px solid rgba(128, 128, 128, 0.2);
+            margin-bottom: 1rem;
+            border-radius: 8px;
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        td {
+            /* Behave  like a "row" */
+            border: none;
+            position: relative;
+            padding: 0.5rem 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            text-align: right;
+        }
+
+        td:not(:last-child) {
+            border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+        }
+
+        td:before {
+            /* Now like a table header */
+            content: attr(data-label);
+            font-weight: bold;
+            margin-right: auto;
+            padding-right: 1rem;
+            opacity: 0.7;
+        }
+
+        td[data-label="Actions"] {
+            flex-direction: column;
+            align-items: stretch;
+            margin-top: 0.5rem;
+            border-bottom: none;
+        }
+
+        td[data-label="Actions"]:before {
+            display: none;
+        }
+        
+        /* Make buttons container full width */
+        .actions-container {
+            width: 100%;
+            justify-content: stretch;
+        }
+        
+        .actions-container button {
+            flex: 1;
+        }
     }
 </style>
