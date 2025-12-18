@@ -73,7 +73,7 @@
             
             if (!Array.isArray(importedList)) throw new Error("Invalid format");
             
-            let addedCount = 0;
+
             const currentKeys = new Set($friendsList.map(f => f.publicKey));
             
             // We can't update the store directly inside a loop cleanly if it's not a method on service, 

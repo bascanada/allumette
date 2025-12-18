@@ -479,10 +479,6 @@ export async function recoverAccount(username, mnemonic) {
     // Store the recovery phrase for the new session
     recoveryPhrase.set(mnemonic);
     
-    // Set encryption key (redundant if loginWithSecret does it, but safer to ensure explicit derivation from seed)
-    const encKey = await deriveEncryptionKey(secretKeyBytes);
-    encryptionKey.set(encKey);
-    
     return token;
 }
 
