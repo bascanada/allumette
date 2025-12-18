@@ -4,6 +4,7 @@ import * as ed from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha2.js';
 import { ethers } from 'ethers';
 import { toast } from '@zerodevx/svelte-toast';
+import { deriveEncryptionKey, encryptData, decryptData } from './crypto-utils.js';
 
 // Enable synchronous methods for ed25519
 ed.hashes.sha512 = sha512;
@@ -23,9 +24,9 @@ export const isLoggedIn = writable(false);
 export const currentUser = writable(null);
 export const jwt = writable(browser ? localStorage.getItem('allumette-jwt') : null);
 export const recoveryPhrase = writable(browser ? localStorage.getItem('allumette-recovery') : null);
-export const friendsList = writable(
-    browser ? JSON.parse(localStorage.getItem('allumette-friends') || '[]') : []
-);
+// Encrypted data management
+export const encryptionKey = writable(null);
+export const friendsList = writable([]); // No default localStorage load
 export const lobbies = writable([]);
 
 // SSE connection for lobby updates
@@ -83,19 +84,96 @@ jwt.subscribe(token => {
 });
 
 // Store recovery phrase securely
-recoveryPhrase.subscribe(phrase => {
+recoveryPhrase.subscribe(async (phrase) => {
   if (!browser) return;
   if (phrase) {
     localStorage.setItem('allumette-recovery', phrase);
+    // If we have a recovery phrase, we can try to derive the encryption key automatically
+    try {
+        const seed = await bip39.mnemonicToSeed(phrase);
+        const secretKeyBytes = seed.slice(0, 32);
+        // We use the raw bytes of the secret key (derived from seed) to derive the encryption key
+        // Note: This matches the key derivation in createAccount/recoverAccount
+        const key = await deriveEncryptionKey(secretKeyBytes);
+        encryptionKey.set(key);
+    } catch (e) {
+        console.error("Failed to auto-derive encryption key from recovery phrase", e);
+    }
   } else {
     localStorage.removeItem('allumette-recovery');
   }
 });
 
-// Persist friends list to localStorage
-friendsList.subscribe(list => {
+// Persist friends list to localStorage (Encrypted)
+let friendsListUnsubscribe;
+encryptionKey.subscribe(async (key) => {
     if (!browser) return;
-    localStorage.setItem('allumette-friends', JSON.stringify(list));
+    
+    const user = get(currentUser);
+    
+    // Cleanup previous subscription
+    if (friendsListUnsubscribe) {
+        friendsListUnsubscribe();
+        friendsListUnsubscribe = null;
+    }
+
+    if (key && user?.publicKey) {
+        const storageKey = `allumette-data-${user.publicKey}`;
+        
+        // 1. Try to load existing data
+        const storedData = localStorage.getItem(storageKey);
+        if (storedData) {
+            try {
+                const encryptedObj = JSON.parse(storedData);
+                const data = await decryptData(encryptedObj, key);
+                if (data.friends) {
+                    friendsList.set(data.friends);
+                }
+            } catch (e) {
+                console.error("Failed to decrypt user data:", e);
+                toast.push("Failed to load encrypted data. Bad key?", { classes: ['error-toast'] });
+            }
+        } else {
+             // Initialize empty if nothing stored
+             friendsList.set([]);
+        }
+
+        // 2. Subscribe to changes and save encrypted
+        friendsListUnsubscribe = friendsList.subscribe(async (list) => {
+            // Avoid saving empty list if it was just initialized (debounce or check change?)
+            // For now, just save.
+            try {
+                const dataToSave = { friends: list };
+                const encrypted = await encryptData(dataToSave, key);
+                localStorage.setItem(storageKey, JSON.stringify(encrypted));
+            } catch (e) {
+                console.error("Failed to save encrypted data:", e);
+            }
+        });
+    } else {
+        // No key or no user: clear list to prevent leakage
+        friendsList.set([]);
+    }
+});
+
+// Also re-run data loading if currentUser changes (e.g. login)
+currentUser.subscribe(() => {
+    // Trigger re-evaluation of encryptionKey subscription logic by toggling it or just ensuring it runs
+    // The encryptionKey store update usually happens around the same time.
+    // If key exists, we reload.
+    const key = get(encryptionKey);
+    if (key) {
+        // Force a re-run of the loading logic by re-setting the key? 
+        // Or simpler: The encryptionKey subscribe block depends on currentUser.
+        // But svelte stores don't auto-re-run if *other* dependencies change unless we compose them.
+        // Let's manually trigger a reload if needed.
+        encryptionKey.set(key); // Hacky but works to re-trigger the subscribe block above?
+        // Better: Derived store? Too complex for now. 
+        // The encryptionKey.subscribe block reads get(currentUser). 
+        // If currentUser changes *after* encryptionKey, we might miss it.
+        // So let's re-set encryptionKey to itself to trigger the subscriber.
+        // A cleaner way is to use a derived store or a function, but this is safe enough for this scale.
+    }
 });
 
 
@@ -240,15 +318,21 @@ export async function createAccount(username) {
 
     // 2. Derive a deterministic seed from the mnemonic.
     const seed = await bip39.mnemonicToSeed(mnemonic);
+    const secretKeyBytes = seed.slice(0, 32);
 
     // 3. Use the first 32 bytes of the seed as the secret key.
-    const secretKey = bytesToHex(seed.slice(0, 32));
+    const secretKey = bytesToHex(secretKeyBytes);
 
     // 4. Login with the derived secret to register the public key on the server.
     const token = await loginWithSecret(username, secretKey);
 
     // 5. Store the mnemonic phrase for the session.
     recoveryPhrase.set(mnemonic);
+    
+    // 6. Set encryption key (derived from the same secret source)
+    // We use the raw bytes to ensure consistency.
+    const encKey = await deriveEncryptionKey(secretKeyBytes);
+    encryptionKey.set(encKey);
 
     return {
         token,
@@ -304,6 +388,22 @@ export async function loginWithSecret(username, secret) {
     const { token } = await loginResponse.json();
     jwt.set(token);
     // currentUser will be set automatically by JWT subscription
+    
+    // 5. Derive and set encryption key
+    // Important: We need a stable key for encryption.
+    // If the user logs in with SECRET, we use the secret bytes as the seed.
+    // Note: This must match how createAccount/recoverAccount derive it.
+    // In those functions, they derived it from the SEED (from mnemonic).
+    // Here we only have the SECRET (hex string). 
+    // Is secretKey == bytesToHex(seed.slice(0,32))? Yes.
+    // So we can convert hex back to bytes.
+    try {
+        const secretBytes = hexToBytes(secret);
+        const encKey = await deriveEncryptionKey(secretBytes);
+        encryptionKey.set(encKey);
+    } catch (e) {
+        console.warn("Could not derive encryption key from secret (maybe wallet login?)", e);
+    }
 
     return token;
 }
@@ -352,6 +452,20 @@ export async function loginWithWallet() {
         jwt.set(token);
         // For wallet users, the username can be their address
         currentUser.set({ username: address, publicKey: address, isWallet: true });
+        
+        // For Wallet Login, we don't have a stable "secret" to derive the encryption key.
+        // We could sign a constant message "allumette-encryption-key" to get a stable signature?
+        // For now, wallet users might not get encrypted persistence across sessions unless we implement signature-based derivation.
+        // Let's implement signature-based derivation:
+        try {
+            const encKeySig = await signer.signMessage("Allumette Local Storage Encryption Key");
+            // Use the signature hash as the key source
+            const encKeyBytes = ethers.getBytes(ethers.keccak256(ethers.toUtf8Bytes(encKeySig)));
+            const encKey = await deriveEncryptionKey(encKeyBytes);
+            encryptionKey.set(encKey);
+        } catch (e) {
+            console.warn("Failed to derive encryption key for wallet:", e);
+        }
 
         return token;
     } catch (err) {
@@ -373,15 +487,20 @@ export async function recoverAccount(username, mnemonic) {
     
     // Derive seed from mnemonic, same as in createAccount
     const seed = await bip39.mnemonicToSeed(mnemonic);
+    const secretKeyBytes = seed.slice(0, 32);
     
     // Use first 32 bytes as the secret key
-    const secretKey = bytesToHex(seed.slice(0, 32));
+    const secretKey = bytesToHex(secretKeyBytes);
     
     // Login with the recovered secret
     const token = await loginWithSecret(username, secretKey);
     
     // Store the recovery phrase for the new session
     recoveryPhrase.set(mnemonic);
+    
+    // Set encryption key (redundant if loginWithSecret does it, but safer to ensure explicit derivation from seed)
+    const encKey = await deriveEncryptionKey(secretKeyBytes);
+    encryptionKey.set(encKey);
     
     return token;
 }
@@ -393,6 +512,8 @@ export function logout() {
     disconnectLobbyStream();
     jwt.set(null);
     recoveryPhrase.set(null);
+    encryptionKey.set(null);
+    friendsList.set([]);
 }
 
 // --- Friend Management ---

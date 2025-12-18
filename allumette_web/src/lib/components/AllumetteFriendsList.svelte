@@ -10,6 +10,8 @@
     import PubKeyDisplay from "./PubKeyDisplay.svelte";
 
     let friendCodeToAdd = "";
+    let showImport = false;
+    let importString = "";
 
     function handleAddFriend() {
         if (!friendCodeToAdd) return;
@@ -39,11 +41,83 @@
             });
         }
     }
+
+    async function handleExportFriends() {
+        if ($friendsList.length === 0) {
+            toast.push("No friends to export.", { classes: ["warning-toast"] });
+            return;
+        }
+        try {
+            const json = JSON.stringify($friendsList);
+            const exportString = btoa(json);
+            await navigator.clipboard.writeText(exportString);
+            toast.push("Friend list backup copied to clipboard!", { classes: ["success-toast"] });
+        } catch (e) {
+            toast.push("Failed to export friends.", { classes: ["error-toast"] });
+        }
+    }
+
+    function handleImportFriends() {
+        if (!importString) return;
+        try {
+            const json = atob(importString);
+            const importedList = JSON.parse(json);
+            
+            if (!Array.isArray(importedList)) throw new Error("Invalid format");
+            
+            let addedCount = 0;
+            const currentKeys = new Set($friendsList.map(f => f.publicKey));
+            
+            // We can't update the store directly inside a loop cleanly if it's not a method on service, 
+            // but we can update the store via the service or just update the list here since we have the store import.
+            // But `friendsList` is a writable store.
+            
+            // Filter out existing friends
+            const newFriends = importedList.filter(f => {
+                if (!f.username || !f.publicKey) return false;
+                return !currentKeys.has(f.publicKey);
+            });
+
+            if (newFriends.length > 0) {
+                friendsList.update(current => [...current, ...newFriends]);
+                toast.push(`Successfully restored ${newFriends.length} friends!`, { classes: ["success-toast"] });
+            } else {
+                toast.push("No new friends found in backup.", { classes: ["warning-toast"] });
+            }
+            
+            importString = "";
+            showImport = false;
+        } catch (e) {
+            console.error(e);
+            toast.push("Failed to import: Invalid backup string.", { classes: ["error-toast"] });
+        }
+    }
 </script>
 
 <div class="friends-list-container">
     {#if $isLoggedIn}
-        <h2>Friends</h2>
+        <div class="flex justify-between items-center">
+            <h2>Friends</h2>
+            <div class="flex gap-2">
+                <button class="btn-icon btn-icon-sm variant-soft" on:click={handleExportFriends} title="Backup Friends">
+                    💾
+                </button>
+                <button class="btn-icon btn-icon-sm variant-soft" on:click={() => showImport = !showImport} title="Restore Friends">
+                    📥
+                </button>
+            </div>
+        </div>
+
+        {#if showImport}
+            <div class="card p-3 mb-4 variant-soft-secondary">
+                <h4 class="h5 mb-2">Restore Backup</h4>
+                <textarea class="textarea mb-2 text-xs" rows="3" placeholder="Paste backup string here..." bind:value={importString}></textarea>
+                <div class="flex justify-end gap-2">
+                    <button class="btn btn-sm variant-ghost" on:click={() => showImport = false}>Cancel</button>
+                    <button class="btn btn-sm variant-filled-primary" on:click={handleImportFriends}>Restore</button>
+                </div>
+            </div>
+        {/if}
 
         {#if $friendsList.length === 0}
             <p class="text-center">
