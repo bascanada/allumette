@@ -1,4 +1,4 @@
-import { writable, get } from 'svelte/store';
+import { writable, get, derived } from 'svelte/store';
 import * as bip39 from 'bip39';
 import * as ed from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha2.js';
@@ -106,10 +106,13 @@ recoveryPhrase.subscribe(async (phrase) => {
 
 // Persist friends list to localStorage (Encrypted)
 let friendsListUnsubscribe;
-encryptionKey.subscribe(async (key) => {
+
+const dataManager = derived([encryptionKey, currentUser], ([$encryptionKey, $currentUser]) => {
+    return { key: $encryptionKey, user: $currentUser };
+});
+
+dataManager.subscribe(async ({ key, user }) => {
     if (!browser) return;
-    
-    const user = get(currentUser);
     
     // Cleanup previous subscription
     if (friendsListUnsubscribe) {
@@ -140,8 +143,6 @@ encryptionKey.subscribe(async (key) => {
 
         // 2. Subscribe to changes and save encrypted
         friendsListUnsubscribe = friendsList.subscribe(async (list) => {
-            // Avoid saving empty list if it was just initialized (debounce or check change?)
-            // For now, just save.
             try {
                 const dataToSave = { friends: list };
                 const encrypted = await encryptData(dataToSave, key);
@@ -153,26 +154,6 @@ encryptionKey.subscribe(async (key) => {
     } else {
         // No key or no user: clear list to prevent leakage
         friendsList.set([]);
-    }
-});
-
-// Also re-run data loading if currentUser changes (e.g. login)
-currentUser.subscribe(() => {
-    // Trigger re-evaluation of encryptionKey subscription logic by toggling it or just ensuring it runs
-    // The encryptionKey store update usually happens around the same time.
-    // If key exists, we reload.
-    const key = get(encryptionKey);
-    if (key) {
-        // Force a re-run of the loading logic by re-setting the key? 
-        // Or simpler: The encryptionKey subscribe block depends on currentUser.
-        // But svelte stores don't auto-re-run if *other* dependencies change unless we compose them.
-        // Let's manually trigger a reload if needed.
-        encryptionKey.set(key); // Hacky but works to re-trigger the subscribe block above?
-        // Better: Derived store? Too complex for now. 
-        // The encryptionKey.subscribe block reads get(currentUser). 
-        // If currentUser changes *after* encryptionKey, we might miss it.
-        // So let's re-set encryptionKey to itself to trigger the subscriber.
-        // A cleaner way is to use a derived store or a function, but this is safe enough for this scale.
     }
 });
 

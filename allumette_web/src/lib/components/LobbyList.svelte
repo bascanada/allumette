@@ -424,7 +424,7 @@
                                     {/if}
                                 </td>
                                 <td class="whitespace-nowrap align-middle" data-label="Actions">
-                                    <div class="flex justify-center w-full">
+                                    <div class="flex justify-center w-full actions-container">
                                     {#if !isUserInLobby(lobby)}
                                         {#if lobby.status === "InProgress"}
                                             <button
@@ -667,12 +667,12 @@
         }
         
         /* Make buttons container full width */
-        :global(td[data-label="Actions"] > div) {
+        .actions-container {
             width: 100%;
             justify-content: stretch;
         }
         
-        :global(td[data-label="Actions"] button) {
+        .actions-container button {
             flex: 1;
         }
     }

@@ -5,9 +5,11 @@
         addFriendFromCode,
         removeFriend,
         isLoggedIn,
+        encryptionKey,
     } from "../allumette-service.js";
     import { toast } from "@zerodevx/svelte-toast";
     import PubKeyDisplay from "./PubKeyDisplay.svelte";
+    import { encryptData, decryptData } from "../crypto-utils.js";
 
     let friendCodeToAdd = "";
     let showImport = false;
@@ -48,20 +50,26 @@
             return;
         }
         try {
-            const json = JSON.stringify($friendsList);
+            if (!$encryptionKey) throw new Error("Encryption key not available");
+            const encrypted = await encryptData($friendsList, $encryptionKey);
+            const json = JSON.stringify(encrypted);
             const exportString = btoa(json);
             await navigator.clipboard.writeText(exportString);
             toast.push("Friend list backup copied to clipboard!", { classes: ["success-toast"] });
         } catch (e) {
+            console.error(e);
             toast.push("Failed to export friends.", { classes: ["error-toast"] });
         }
     }
 
-    function handleImportFriends() {
+    async function handleImportFriends() {
         if (!importString) return;
         try {
             const json = atob(importString);
-            const importedList = JSON.parse(json);
+            const encryptedObj = JSON.parse(json);
+            
+            if (!$encryptionKey) throw new Error("Encryption key not available");
+            const importedList = await decryptData(encryptedObj, $encryptionKey);
             
             if (!Array.isArray(importedList)) throw new Error("Invalid format");
             
