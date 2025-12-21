@@ -9,6 +9,7 @@
     } from "../allumette-service.js";
     import { toast } from "@zerodevx/svelte-toast";
     import PubKeyDisplay from "./PubKeyDisplay.svelte";
+    import Avatar from "./Avatar.svelte";
     import { encryptData, decryptData } from "../crypto-utils.js";
 
     let friendCodeToAdd = "";
@@ -139,9 +140,12 @@
                 <li
                     class="card p-3 variant-soft-surface flex justify-between items-center"
                 >
-                    <div class="friend-info">
-                        <strong>{friend.username}</strong>
-                        <PubKeyDisplay pubkey={friend.publicKey} />
+                    <div class="flex items-center gap-3">
+                        <Avatar value={friend.publicKey} size={40} />
+                        <div class="friend-info">
+                            <strong>{friend.username}</strong>
+                            <PubKeyDisplay pubkey={friend.publicKey} />
+                        </div>
                     </div>
                     <button
                         class="btn-icon variant-filled-error"

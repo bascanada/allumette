@@ -15,6 +15,7 @@
         jwt,
     } from "../allumette-service.js";
     import { toast } from "@zerodevx/svelte-toast";
+    import Avatar from "./Avatar.svelte";
 
     // Callback function that will be called when joining a lobby
     // Provides: { lobbyId, token, players, isPrivate }
@@ -396,8 +397,11 @@
                                     >
                                 </td>
                                 <td data-label="Lobby ID" class="align-middle max-w-[150px] sm:max-w-[250px] md:max-w-xs">
-                                    <div class="truncate" title={lobby.id}>
-                                        <code class="code text-xs">{lobby.id}</code>
+                                    <div class="flex items-center gap-2 justify-center" title={lobby.id}>
+                                        <Avatar value={lobby.owner} size={24} />
+                                        <div class="truncate max-w-[120px]">
+                                            <code class="code text-xs">{lobby.id}</code>
+                                        </div>
                                     </div>
                                 </td>
                                 <td data-label="State" class="align-middle">

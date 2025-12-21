@@ -1,4 +1,5 @@
 <script>
+  import Avatar from "./Avatar.svelte";
   import {
     createAccount,
     loginWithSecret,
@@ -114,24 +115,30 @@
     <div class="welcome-view">
       <h3>Welcome, {$currentUser?.username}</h3>
       {#if $currentUser?.publicKey}
-        <div class="pubkey-section card p-4 variant-soft-surface">
-          <p class="pubkey-label font-semibold">Your Public Key:</p>
-          <input
-            type="text"
-            readonly
-            class="input"
-            value={$currentUser.publicKey}
-            on:click={(e) => e.target.select()}
-          />
-          <button
-            class="btn variant-filled-success btn-sm mt-2"
-            on:click={() => {
-              navigator.clipboard.writeText($currentUser.publicKey);
-              toast.push("Public key copied!", { classes: ["success-toast"] });
-            }}
-          >
-            Copy Public Key
-          </button>
+        <div class="pubkey-section card p-4 variant-soft-surface flex flex-col gap-4">
+          <div class="flex flex-col items-center gap-2">
+            <Avatar value={$currentUser.publicKey} size={80} />
+            <p class="text-sm opacity-70">This is your visual fingerprint</p>
+          </div>
+          <div>
+            <p class="pubkey-label font-semibold">Your Public Key:</p>
+            <input
+              type="text"
+              readonly
+              class="input"
+              value={$currentUser.publicKey}
+              on:click={(e) => e.target.select()}
+            />
+            <button
+              class="btn variant-filled-success btn-sm mt-2"
+              on:click={() => {
+                navigator.clipboard.writeText($currentUser.publicKey);
+                toast.push("Public key copied!", { classes: ["success-toast"] });
+              }}
+            >
+              Copy Public Key
+            </button>
+          </div>
         </div>
       {/if}
       <button class="btn variant-filled-surface" on:click={handleLogout}
