@@ -1,6 +1,8 @@
 <script>
+  import Avatar from "./Avatar.svelte";
+
   export let lobbyId;
-  export let players;
+  export let players = []; // Array of public keys or player objects
   export let token;
 
   let moves = Array(9).fill(null);
@@ -19,6 +21,16 @@
 <div class="test-game">
   <h2>Test Game (Tic Tac Toe style)</h2>
   <p>Lobby: {lobbyId}</p>
+
+  <div class="players-container">
+    {#each players as player}
+      <div class="player">
+          <Avatar value={typeof player === 'string' ? player : player.publicKey} size={80} />
+          <span>{typeof player === 'string' ? player.slice(0,8) + '...' : player.username || player.publicKey.slice(0,8) + '...'}</span>
+      </div>
+    {/each}
+  </div>
+
   <div class="board">
     {#each moves as move, i}
       <button class="cell" on:click={() => handleMove(i)}>
@@ -38,6 +50,17 @@
     background: white;
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  .players-container {
+      display: flex;
+      gap: 2rem;
+      margin-bottom: 1rem;
+  }
+  .player {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
   }
   .board {
     display: grid;
