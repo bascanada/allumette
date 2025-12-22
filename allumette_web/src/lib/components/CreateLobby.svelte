@@ -1,5 +1,5 @@
 <script>
-  import { createLobby, friendsList } from "../allumette-service.js";
+  import { createLobby, friendsStore } from "../allumette-service.js";
   import { toast } from "@zerodevx/svelte-toast";
 
   export let availableGames = [];
@@ -89,13 +89,13 @@
             <span class="badge variant-filled-secondary">{selectedFriends.length} selected</span>
         </div>
         
-        {#if $friendsList.length === 0}
+        {#if $friendsStore.length === 0}
             <div class="p-6 text-center opacity-70 italic">
                 No friends found to invite. Add friends from the Friends tab!
             </div>
         {:else}
             <div class="friends-list space-y-3 max-h-60 overflow-y-auto p-1">
-              {#each $friendsList as friend (friend.publicKey)}
+              {#each $friendsStore as friend (friend.publicKey)}
                 <button 
                     type="button"
                     class="w-full text-left p-3 rounded-container-token flex items-center justify-between transition-all duration-200 border-2 cursor-pointer group {selectedFriends.includes(friend.publicKey) ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-surface-600-300-token hover:border-primary-400 hover:bg-surface-200 dark:hover:bg-surface-700'}"
@@ -109,7 +109,7 @@
                             {/if}
                         </div>
                         <div class="flex flex-col">
-                            <span class="font-bold text-base">{friend.username}</span>
+                            <span class="font-bold text-base">{friend.name}</span>
                             <code class="text-xs opacity-70">{friend.publicKey.substring(0, 8)}...</code>
                         </div>
                     </div>

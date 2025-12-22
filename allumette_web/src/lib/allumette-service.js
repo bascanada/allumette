@@ -28,7 +28,16 @@ export const jwt = writable(browser ? localStorage.getItem('allumette-jwt') : nu
 export const recoveryPhrase = writable(browser ? localStorage.getItem('allumette-recovery') : null);
 // Encrypted data management
 export const encryptionKey = writable(null);
-export const friendsList = writable([]); // No default localStorage load
+// Internal writable store for friends
+const _friendsStore = writable([]);
+
+// Expose as readable store (matches friendsStore specification)
+export const friendsStore = {
+    subscribe: _friendsStore.subscribe
+};
+
+// Keep friendsList as alias for backward compatibility
+export const friendsList = _friendsStore;
 export const lobbies = writable([]);
 
 // SSE connection for lobby updates
@@ -132,7 +141,13 @@ dataManager.subscribe(async ({ key, user }) => {
                 const encryptedObj = JSON.parse(storedData);
                 const data = await decryptData(encryptedObj, key);
                 if (data.friends) {
-                    friendsList.set(data.friends);
+                    // Migrate old format (username) to new format (name)
+                    const migratedFriends = data.friends.map(f => ({
+                        publicKey: f.publicKey,
+                        name: f.name || f.username, // Support both old and new format
+                        addedAt: f.addedAt
+                    }));
+                    _friendsStore.set(migratedFriends);
                 }
             } catch (e) {
                 console.error("Failed to decrypt user data:", e);
@@ -140,11 +155,11 @@ dataManager.subscribe(async ({ key, user }) => {
             }
         } else {
              // Initialize empty if nothing stored
-             friendsList.set([]);
+             _friendsStore.set([]);
         }
 
         // 2. Subscribe to changes and save encrypted
-        friendsListUnsubscribe = friendsList.subscribe(async (list) => {
+        friendsListUnsubscribe = _friendsStore.subscribe(async (list) => {
             try {
                 const dataToSave = { friends: list };
                 const encrypted = await encryptData(dataToSave, key);
@@ -155,7 +170,7 @@ dataManager.subscribe(async ({ key, user }) => {
         });
     } else {
         // No key or no user: clear list to prevent leakage
-        friendsList.set([]);
+        _friendsStore.set([]);
     }
 });
 
@@ -492,14 +507,50 @@ export function logout() {
     jwt.set(null);
     recoveryPhrase.set(null);
     encryptionKey.set(null);
-    friendsList.set([]);
+    _friendsStore.set([]);
 }
 
 // --- Friend Management ---
 
 /**
+ * Adds a friend directly by public key and name.
+ * @param {string} publicKey - The friend's public key.
+ * @param {string} name - Display name for this friend.
+ */
+export function addFriend(publicKey, name) {
+    const currentFriends = get(_friendsStore);
+    if (currentFriends.some(friend => friend.publicKey === publicKey)) {
+        throw new Error('Friend already exists.');
+    }
+    _friendsStore.update(list => [...list, {
+        publicKey,
+        name,
+        addedAt: Date.now()
+    }]);
+}
+
+/**
+ * Removes a friend by their public key.
+ * @param {string} publicKey - The public key of the friend to remove.
+ */
+export function removeFriend(publicKey) {
+    _friendsStore.update(list => list.filter(friend => friend.publicKey !== publicKey));
+}
+
+/**
+ * Updates a friend's display name.
+ * @param {string} publicKey - The public key of the friend to update.
+ * @param {string} name - The new display name.
+ */
+export function updateFriendName(publicKey, name) {
+    _friendsStore.update(list =>
+        list.map(f => f.publicKey === publicKey ? { ...f, name } : f)
+    );
+}
+
+/**
  * Generates a friend code for the current user.
- * A friend code is a base64 encoded JSON string containing the user's username and public key.
+ * A friend code is a base64 encoded JSON string containing the user's name and public key.
  * @returns {string} The friend code.
  */
 export function generateMyFriendCode() {
@@ -508,7 +559,7 @@ export function generateMyFriendCode() {
         throw new Error('User not logged in.');
     }
     const friendInfo = {
-        username: user.username,
+        name: user.username, // Use username as the default name in friend code
         publicKey: user.publicKey
     };
     const json = JSON.stringify(friendInfo);
@@ -527,29 +578,27 @@ export function addFriendFromCode(friendCode) {
         const json = new TextDecoder().decode(bytes);
         const friendInfo = JSON.parse(json);
 
-        if (!friendInfo.username || !friendInfo.publicKey) {
+        // Support both old format (username) and new format (name)
+        const name = friendInfo.name || friendInfo.username;
+        if (!name || !friendInfo.publicKey) {
             throw new Error('Invalid friend code format.');
         }
 
-        const currentFriends = get(friendsList);
+        const currentFriends = get(_friendsStore);
         if (currentFriends.some(friend => friend.publicKey === friendInfo.publicKey)) {
             throw new Error('Friend already exists.');
         }
 
-        friendsList.update(list => [...list, friendInfo]);
+        _friendsStore.update(list => [...list, {
+            publicKey: friendInfo.publicKey,
+            name,
+            addedAt: Date.now()
+        }]);
 
     } catch (e) {
         console.error('Failed to add friend:', e);
         throw new Error('Invalid or malformed friend code.');
     }
-}
-
-/**
- * Removes a friend by their public key.
- * @param {string} publicKey - The public key of the friend to remove.
- */
-export function removeFriend(publicKey) {
-    friendsList.update(list => list.filter(friend => friend.publicKey !== publicKey));
 }
 
 // --- Lobby Management ---

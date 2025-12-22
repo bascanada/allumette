@@ -9,7 +9,7 @@
         joinLobby,
         deleteLobby,
         inviteToLobby,
-        friendsList,
+        friendsStore,
         currentUser,
         isLoggedIn,
         jwt,
@@ -101,9 +101,9 @@
 
     // A map for quick friend lookups
     let friendMap = {};
-    friendsList.subscribe((friends) => {
+    friendsStore.subscribe((friends) => {
         friendMap = friends.reduce((acc, friend) => {
-            acc[friend.publicKey] = friend.username;
+            acc[friend.publicKey] = friend.name;
             return acc;
         }, {});
     });
@@ -256,7 +256,7 @@
     // Get friends that are not already in the lobby and not in whitelist
     function getInvitableFriends(lobby) {
         const players = lobby?.players || [];
-        return $friendsList.filter((friend) => {
+        return $friendsStore.filter((friend) => {
             // Don't show if already in lobby (players may be strings or objects)
             if (
                 players.some(
@@ -572,7 +572,7 @@
                                 value={friend.publicKey}
                                 bind:group={selectedFriendsToInvite}
                             />
-                            <span>{friend.username}</span>
+                            <span>{friend.name}</span>
                         </label>
                     {/each}
                 </div>

@@ -1,6 +1,8 @@
 <script>
     import {
+        friendsStore,
         friendsList,
+        addFriend,
         generateMyFriendCode,
         addFriendFromCode,
         removeFriend,
@@ -46,13 +48,13 @@
     }
 
     async function handleExportFriends() {
-        if ($friendsList.length === 0) {
+        if ($friendsStore.length === 0) {
             toast.push("No friends to export.", { classes: ["warning-toast"] });
             return;
         }
         try {
             if (!$encryptionKey) throw new Error("Encryption key not available");
-            const encrypted = await encryptData($friendsList, $encryptionKey);
+            const encrypted = await encryptData($friendsStore, $encryptionKey);
             const json = JSON.stringify(encrypted);
             const exportString = btoa(json);
             await navigator.clipboard.writeText(exportString);
@@ -73,19 +75,20 @@
             const importedList = await decryptData(encryptedObj, $encryptionKey);
             
             if (!Array.isArray(importedList)) throw new Error("Invalid format");
-            
 
-            const currentKeys = new Set($friendsList.map(f => f.publicKey));
-            
-            // We can't update the store directly inside a loop cleanly if it's not a method on service, 
-            // but we can update the store via the service or just update the list here since we have the store import.
-            // But `friendsList` is a writable store.
-            
-            // Filter out existing friends
+
+            const currentKeys = new Set($friendsStore.map(f => f.publicKey));
+
+            // Filter out existing friends and migrate to new format (name instead of username)
             const newFriends = importedList.filter(f => {
-                if (!f.username || !f.publicKey) return false;
+                const name = f.name || f.username;
+                if (!name || !f.publicKey) return false;
                 return !currentKeys.has(f.publicKey);
-            });
+            }).map(f => ({
+                publicKey: f.publicKey,
+                name: f.name || f.username,
+                addedAt: f.addedAt || Date.now()
+            }));
 
             if (newFriends.length > 0) {
                 friendsList.update(current => [...current, ...newFriends]);
@@ -128,7 +131,7 @@
             </div>
         {/if}
 
-        {#if $friendsList.length === 0}
+        {#if $friendsStore.length === 0}
             <p class="text-center">
                 Your friends list is empty. Add a friend using their Friend
                 Code!
@@ -136,14 +139,14 @@
         {/if}
 
         <ul class="list">
-            {#each $friendsList as friend (friend.publicKey)}
+            {#each $friendsStore as friend (friend.publicKey)}
                 <li
                     class="card p-3 variant-soft-surface flex justify-between items-center"
                 >
                     <div class="flex items-center gap-3">
                         <Avatar value={friend.publicKey} size={40} />
                         <div class="friend-info">
-                            <strong>{friend.username}</strong>
+                            <strong>{friend.name}</strong>
                             <PubKeyDisplay pubkey={friend.publicKey} />
                         </div>
                     </div>
@@ -151,7 +154,7 @@
                         class="btn-icon variant-filled-error"
                         on:click={() => removeFriend(friend.publicKey)}
                         title="Remove friend"
-                        aria-label="Remove {friend.username}"
+                        aria-label="Remove {friend.name}"
                     >
                         <svg
                             xmlns="http://www.w3.org/2000/svg"
