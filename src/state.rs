@@ -70,6 +70,7 @@ impl LobbyManager {
             status: crate::lobby::LobbyStatus::Waiting,
             is_private,
             whitelist: whitelist.map(|w| w.into_iter().collect()),
+            last_activity: std::time::Instant::now(),
         };
         lobby.players.insert(owner);
         self.lobbies.insert(lobby.id, lobby.clone());
@@ -91,6 +92,7 @@ impl LobbyManager {
             status: crate::lobby::LobbyStatus::Waiting,
             is_private,
             whitelist: whitelist.map(|w| w.into_iter().collect()),
+            last_activity: std::time::Instant::now(),
         };
         self.lobbies.insert(lobby.id, lobby.clone());
         lobby
@@ -148,6 +150,8 @@ impl LobbyManager {
                 }
             }
             lobby.players.insert(player_id);
+            // Reset activity timer on join (lobby is in Waiting status)
+            lobby.last_activity = std::time::Instant::now();
             Ok(())
         } else {
             // Log available lobbies for debugging when a lobby is unexpectedly missing
@@ -184,6 +188,8 @@ impl LobbyManager {
                 return Ok(());
             }
             lobby.status = crate::lobby::LobbyStatus::Waiting;
+            // Reset activity timer when returning to Waiting (inactivity cleanup starts now)
+            lobby.last_activity = std::time::Instant::now();
             tracing::info!(lobby_id = %lobby_id, "Lobby status set to Waiting");
             Ok(())
         } else {
@@ -219,6 +225,10 @@ impl LobbyManager {
                 // Create whitelist if it doesn't exist
                 lobby.whitelist = Some(player_ids.into_iter().collect());
             }
+            // Reset activity timer on invite (if lobby is in Waiting status)
+            if lobby.status == crate::lobby::LobbyStatus::Waiting {
+                lobby.last_activity = std::time::Instant::now();
+            }
             Ok(())
         } else {
             Err(SignalingError::UnknownPeer)
@@ -238,6 +248,38 @@ impl LobbyManager {
         } else {
             Err(SignalingError::UnknownPeer)
         }
+    }
+
+    /// Clean up inactive lobbies that are in Waiting status and have exceeded the timeout.
+    /// Returns the list of deleted lobby IDs and their player lists for cleanup.
+    pub fn cleanup_inactive_lobbies(&mut self) -> Vec<(Uuid, Vec<String>)> {
+        let now = std::time::Instant::now();
+        let timeout = crate::lobby::LOBBY_INACTIVITY_TIMEOUT;
+
+        let expired_lobbies: Vec<(Uuid, Vec<String>)> = self
+            .lobbies
+            .iter()
+            .filter(|(_, lobby)| {
+                // Only cleanup lobbies in Waiting status
+                lobby.status == crate::lobby::LobbyStatus::Waiting
+                    && now.duration_since(lobby.last_activity) >= timeout
+            })
+            .map(|(id, lobby)| (*id, lobby.players.iter().cloned().collect()))
+            .collect();
+
+        for (id, _) in &expired_lobbies {
+            self.lobbies.remove(id);
+            tracing::info!(lobby_id = %id, "Lobby cleaned up due to inactivity");
+        }
+
+        if !expired_lobbies.is_empty() {
+            tracing::info!(
+                count = expired_lobbies.len(),
+                "Cleaned up inactive lobbies"
+            );
+        }
+
+        expired_lobbies
     }
 }
 

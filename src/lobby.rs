@@ -1,8 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::time::Instant;
 use uuid::Uuid;
 
 pub type PlayerId = String;
+
+/// Inactivity timeout for lobbies in Waiting status (15 minutes)
+pub const LOBBY_INACTIVITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Player {
@@ -25,6 +29,9 @@ pub struct Lobby {
     pub is_private: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub whitelist: Option<HashSet<PlayerId>>,
+    /// Last activity timestamp for inactivity cleanup (not serialized)
+    #[serde(skip)]
+    pub last_activity: Instant,
 }
 
 /// Sanitized player info that only exposes if it's the current user

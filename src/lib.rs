@@ -90,6 +90,34 @@ pub async fn run(addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Lobby inactivity cleanup task - runs every 60 seconds
+    let lobby_cleanup_state = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            let expired = {
+                let mut lobby_manager = lobby_cleanup_state.lobby_manager.write().unwrap();
+                lobby_manager.cleanup_inactive_lobbies()
+            };
+            // Remove players from players_in_lobbies mapping for cleaned up lobbies
+            if !expired.is_empty() {
+                let mut players_in_lobbies = lobby_cleanup_state.players_in_lobbies.write().unwrap();
+                for (lobby_id, players) in &expired {
+                    for player_id in players {
+                        if let Some(lid) = players_in_lobbies.get(player_id) {
+                            if lid == lobby_id {
+                                players_in_lobbies.remove(player_id);
+                            }
+                        }
+                    }
+                }
+                // Notify clients about lobby updates
+                let _ = lobby_cleanup_state.lobby_updates.send(());
+            }
+        }
+    });
+
     let server = SignalingServerBuilder::new(addr, MatchmakingDemoTopology, state.clone())
         .on_connection_request({
             let state = state.clone();
@@ -168,6 +196,7 @@ fn app(state: AppState) -> Router {
         )
         .route("/lobbies/stream", get(lobby_stream_handler))
         .route("/lobbies/{lobby_id}/join", post(join_lobby_handler))
+        .route("/lobbies/{lobby_id}/start", post(start_lobby_handler))
         .route("/lobbies/{lobby_id}", delete(delete_lobby_handler))
         .route("/lobbies/{lobby_id}/invite", post(invite_to_lobby_handler))
         .route("/ice-servers", get(get_ice_servers_handler))
@@ -676,7 +705,51 @@ async fn join_lobby_handler(
     
     // Notify all SSE clients of lobby update
     let _ = state.state.lobby_updates.send(());
-    
+
+    add_no_cache_headers(StatusCode::OK.into_response())
+}
+
+/// Start a lobby (mark as InProgress). Only the owner can start the lobby.
+/// This is useful when the game starts without WebSocket signaling (e.g., single player).
+async fn start_lobby_handler(
+    State(state): State<AppState>,
+    Path(lobby_id): Path<uuid::Uuid>,
+    claims: auth::Claims,
+) -> impl IntoResponse {
+    let mut lobby_manager = state.state.lobby_manager.write().unwrap();
+
+    // Check if lobby exists
+    let lobby = match lobby_manager.get_lobby(&lobby_id) {
+        Some(l) => l,
+        None => {
+            tracing::warn!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Attempted to start non-existent lobby");
+            return add_no_cache_headers((StatusCode::NOT_FOUND, "Lobby not found").into_response());
+        }
+    };
+
+    // Check if requester is the owner
+    if lobby.owner != claims.sub {
+        tracing::warn!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Non-owner attempted to start lobby");
+        return add_no_cache_headers((StatusCode::FORBIDDEN, "Only the owner can start the lobby").into_response());
+    }
+
+    // Check if already in progress (idempotent)
+    if lobby.status == crate::lobby::LobbyStatus::InProgress {
+        tracing::debug!(lobby_id = %lobby_id, "Lobby already in progress");
+        return add_no_cache_headers(StatusCode::OK.into_response());
+    }
+
+    // Start the lobby
+    if let Err(e) = lobby_manager.start_lobby(&lobby_id, &claims.sub) {
+        tracing::error!(lobby_id = %lobby_id, error = ?e, "Failed to start lobby");
+        return add_no_cache_headers((StatusCode::INTERNAL_SERVER_ERROR, "Failed to start lobby").into_response());
+    }
+
+    tracing::info!(lobby_id = %lobby_id, pubkey = %&claims.sub[..8], "Lobby started via API");
+
+    // Notify all SSE clients of lobby update
+    let _ = state.state.lobby_updates.send(());
+
     add_no_cache_headers(StatusCode::OK.into_response())
 }
 

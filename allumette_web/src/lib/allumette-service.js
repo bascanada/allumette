@@ -117,6 +117,7 @@ recoveryPhrase.subscribe(async (phrase) => {
 
 // Persist friends list to localStorage (Encrypted)
 let friendsListUnsubscribe;
+let initialLoadComplete = false; // Track if we've loaded data to prevent race conditions
 
 const dataManager = derived([encryptionKey, currentUser], ([$encryptionKey, $currentUser]) => {
     return { key: $encryptionKey, user: $currentUser };
@@ -124,7 +125,7 @@ const dataManager = derived([encryptionKey, currentUser], ([$encryptionKey, $cur
 
 dataManager.subscribe(async ({ key, user }) => {
     if (!browser) return;
-    
+
     // Cleanup previous subscription
     if (friendsListUnsubscribe) {
         friendsListUnsubscribe();
@@ -133,7 +134,7 @@ dataManager.subscribe(async ({ key, user }) => {
 
     if (key && user?.publicKey) {
         const storageKey = `allumette-data-${user.publicKey}`;
-        
+
         // 1. Try to load existing data
         const storedData = localStorage.getItem(storageKey);
         if (storedData) {
@@ -158,8 +159,24 @@ dataManager.subscribe(async ({ key, user }) => {
              _friendsStore.set([]);
         }
 
+        // Mark initial load as complete - now safe to save
+        initialLoadComplete = true;
+
         // 2. Subscribe to changes and save encrypted
+        // Skip the first immediate invocation (which is the data we just loaded)
+        let isFirstRun = true;
         friendsListUnsubscribe = _friendsStore.subscribe(async (list) => {
+            // Skip the initial subscription callback (it fires immediately with current value)
+            if (isFirstRun) {
+                isFirstRun = false;
+                return;
+            }
+
+            // Only save if initial load is complete (prevents race condition overwrites)
+            if (!initialLoadComplete) {
+                return;
+            }
+
             try {
                 const dataToSave = { friends: list };
                 const encrypted = await encryptData(dataToSave, key);
@@ -169,7 +186,10 @@ dataManager.subscribe(async ({ key, user }) => {
             }
         });
     } else {
-        // No key or no user: clear list to prevent leakage
+        // No key or no user: clear list in memory to prevent leakage
+        // Do NOT save - the encrypted data in localStorage should remain untouched
+        // Reset the load flag so we don't accidentally save during the race window
+        initialLoadComplete = false;
         _friendsStore.set([]);
     }
 });
@@ -867,6 +887,26 @@ export async function deleteLobby(lobbyId) {
 
     // Refresh the lobby list
     await getLobbies();
+}
+
+/**
+ * Starts a lobby (marks as InProgress). Only the owner can start.
+ * This is useful when starting a game without WebSocket signaling (e.g., single player).
+ * @param {string} lobbyId - The ID of the lobby to start.
+ */
+export async function startLobby(lobbyId) {
+    const token = get(jwt);
+    if (!token) throw new Error('Not logged in');
+
+    const response = await fetch(`${apiBaseUrlValue}/lobbies/${lobbyId}/start`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Failed to start lobby: ${error}`);
+    }
 }
 
 /**

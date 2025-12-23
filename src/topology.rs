@@ -73,6 +73,8 @@ impl SignalingTopology<NoCallbacks, ServerState> for MatchmakingDemoTopology {
                     warn!(peer = ?peer_id, error = ?e, "Failed to start lobby on owner connect");
                 } else {
                     info!(peer = ?peer_id, lobby_id = %lobby_id, "Owner connected — lobby marked InProgress");
+                    // Notify SSE clients about the status change
+                    let _ = state.lobby_updates.send(());
                 }
             }
         }
@@ -163,6 +165,8 @@ impl SignalingTopology<NoCallbacks, ServerState> for MatchmakingDemoTopology {
                 warn!(peer = ?peer_id, error = ?e, "Failed to end lobby when last player disconnected");
             } else {
                 info!(lobby_id = %lobby_id, "All players disconnected — lobby returned to Waiting");
+                // Notify SSE clients about the status change
+                let _ = state.lobby_updates.send(());
             }
         }
 

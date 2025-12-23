@@ -1,5 +1,6 @@
 <script>
   import Avatar from "./Avatar.svelte";
+  import { friendsStore, currentUser } from "../allumette-service.js";
 
   export let lobbyId;
   export let players = []; // Array of public keys or player objects
@@ -7,6 +8,36 @@
 
   let moves = Array(9).fill(null);
   let currentPlayer = 'X';
+
+  // Force reactivity when friends list changes
+  $: friends = $friendsStore;
+
+  /**
+   * Resolves a player's public key to a display name.
+   * Priority: current user > player.username > friend name > truncated public key
+   */
+  function getPlayerDisplayName(player, friendsList) {
+    const publicKey = typeof player === 'string' ? player : player.publicKey;
+
+    // Check if it's the current user
+    if ($currentUser?.publicKey === publicKey) {
+      return $currentUser.username + ' (You)';
+    }
+
+    // If player object has a username, use it
+    if (typeof player === 'object' && player.username) {
+      return player.username;
+    }
+
+    // Check if this player is in our friends list
+    const friend = friendsList.find(f => f.publicKey === publicKey);
+    if (friend) {
+      return friend.name;
+    }
+
+    // Fallback to truncated public key
+    return publicKey.slice(0, 8) + '...';
+  }
 
   function handleMove(index) {
     if (!moves[index]) {
@@ -26,7 +57,7 @@
     {#each players as player}
       <div class="player">
           <Avatar value={typeof player === 'string' ? player : player.publicKey} size={80} />
-          <span>{typeof player === 'string' ? player.slice(0,8) + '...' : player.username || player.publicKey.slice(0,8) + '...'}</span>
+          <span>{getPlayerDisplayName(player, friends)}</span>
       </div>
     {/each}
   </div>

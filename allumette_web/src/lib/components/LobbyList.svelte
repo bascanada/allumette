@@ -99,18 +99,13 @@
         if (totalPages === 0) currentPage = 1;
     }
 
-    // A map for quick friend lookups
-    let friendMap = {};
-    friendsStore.subscribe((friends) => {
-        friendMap = friends.reduce((acc, friend) => {
-            acc[friend.publicKey] = friend.name;
-            return acc;
-        }, {});
-    });
+    // Force reactivity when friends list changes
+    $: friends = $friendsStore;
 
     // Helper function to get display name for a player
     // Accepts either a publicKey string or a player object { publicKey }
-    function getPlayerDisplayName(player) {
+    // Pass friendsList as parameter to ensure Svelte tracks reactivity
+    function getPlayerDisplayName(player, friendsList) {
         const publicKey =
             typeof player === "string" ? player : player?.publicKey;
         if (!publicKey) return "Unknown Player";
@@ -119,7 +114,11 @@
             return $currentUser.username;
         }
         // Check if it's a friend
-        return friendMap[publicKey] || `Player ${publicKey.substring(0, 8)}...`;
+        const friend = friendsList.find(f => f.publicKey === publicKey);
+        if (friend) {
+            return friend.name;
+        }
+        return `Player ${publicKey.substring(0, 8)}...`;
     }
 
     async function fetchLobbies() {
@@ -135,7 +134,14 @@
         }
     }
 
-    async function handleJoin(lobby) {
+    async function handleJoin(lobbyId) {
+        // Always fetch fresh lobby data from the store to get latest SSE updates
+        const lobby = $lobbies.find((l) => l.id === lobbyId);
+        if (!lobby) {
+            toast.push("Lobby not found", { classes: ["error-toast"] });
+            return;
+        }
+
         const inLobby = isUserInLobby(lobby);
 
         // If user is already in the lobby, treat this as "Start Game" and call the callback
@@ -424,9 +430,9 @@
                                             {#each lobby.players as player}
                                                 <span class="badge variant-soft-surface">
                                                     {#if (typeof player === "string" ? player : player?.publicKey) === $currentUser?.publicKey}
-                                                        <strong>{getPlayerDisplayName(player)}</strong>
+                                                        <strong>{getPlayerDisplayName(player, friends)}</strong>
                                                     {:else}
-                                                        {getPlayerDisplayName(player)}
+                                                        {getPlayerDisplayName(player, friends)}
                                                     {/if}
                                                 </span>
                                             {/each}
@@ -447,7 +453,7 @@
                                             <button
                                                 class="btn btn-sm variant-filled-success"
                                                 on:click={() =>
-                                                    handleJoin(lobby)}
+                                                    handleJoin(lobby.id)}
                                             >
                                                 Join
                                             </button>
@@ -458,7 +464,7 @@
                                                 <button
                                                     class="btn variant-filled-success btn-sm"
                                                     on:click={() =>
-                                                        handleJoin(lobby)}
+                                                        handleJoin(lobby.id)}
                                                 >
                                                     Start Game
                                                 </button>
